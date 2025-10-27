@@ -1,0 +1,149 @@
+# ========================================
+# OS-Specific Junk Files
+# ========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+__MACOSX/
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# Linux
+*~
+
+# ========================================
+# IDE / Editor Directories
+# ========================================
+# VS Code
+.vscode/
+.history/
+*.code-workspace
+
+# JetBrains (IntelliJ, PyCharm, WebStorm, etc.)
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Eclipse
+.project
+.classpath
+.csettings
+.settings/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# ========================================
+# Dependency & Package Managers
+# ========================================
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.py.class
+.Python
+env/
+venv/
+ENV/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Ruby
+.bundle/
+vendor/bundle/
+log/
+tmp/
+*.gem
+
+# Go
+bin/
+vendor/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+*.car
+*.class
+hs_err_pid*
+target/
+
+# Rust
+target/
+Cargo.lock
+
+# ========================================
+# Build / Distribution Directories
+# ========================================
+dist/
+build/
+out/
+tmp/
+temp/
+.cache/
+.cache-loader/
+coverage/
+*.egg-info/
+.eggs/
+
+# ========================================
+# Logs
+# ========================================
+*.log
+logs/
+*.out
+*.err
+
+# ========================================
+# Environment & Config
+# ========================================
+.env
+.env.*
+!.env.example
+*.local
+*.secret
+*.bak
+
+# ========================================
+# Miscellaneous
+# ========================================
+# Backup or temporary files
+*.swp
+*.swo
+*.tmp
+*.bak
+*.old
+*.orig
+*.save
+*.pid
+
+# ================================
+# Custom project cache directories
+# ================================
+.cache/
+tmp/
+temp/
+__cache__/
