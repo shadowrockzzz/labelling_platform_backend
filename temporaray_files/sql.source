@@ -1,0 +1,74 @@
+To generate tables
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR NOT NULL UNIQUE,
+    hashed_password VARCHAR NOT NULL,
+    full_name VARCHAR,
+    is_active BOOLEAN DEFAULT TRUE,
+    role VARCHAR DEFAULT 'labeler',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_at TIMESTAMPTZ
+);
+
+CREATE TABLE projects (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    description VARCHAR,
+    owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_at TIMESTAMPTZ
+);
+
+CREATE TABLE datasets (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_at TIMESTAMPTZ
+);
+
+CREATE TABLE annotations (
+    id SERIAL PRIMARY KEY,
+    dataset_id INTEGER REFERENCES datasets(id) ON DELETE CASCADE,
+    labeler_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    annotation_data JSON NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_at TIMESTAMPTZ
+);
+
+
+
+
+
+To create data inside the tables
+
+-- USERS
+INSERT INTO users (email, hashed_password, full_name, role)
+VALUES 
+('admin@example.com', 'hashed_admin_pw', 'Alice Admin', 'admin'),
+('manager@example.com', 'hashed_manager_pw', 'Bob Manager', 'manager'),
+('labeler1@example.com', 'hashed_labeler_pw1', 'Charlie Labeler', 'labeler'),
+('labeler2@example.com', 'hashed_labeler_pw2', 'Dana Labeler', 'labeler');
+
+-- PROJECTS
+INSERT INTO projects (name, description, owner_id)
+VALUES
+('Image Classification', 'Classify animal images by species', 1),
+('Document OCR', 'Extract text from scanned PDFs', 2);
+
+-- DATASETS
+INSERT INTO datasets (name, project_id)
+VALUES
+('Wildlife Dataset', 1),
+('Birds Subset', 1),
+('Invoices Dataset', 2);
+
+-- ANNOTATIONS
+INSERT INTO annotations (dataset_id, labeler_id, annotation_data)
+VALUES
+(1, 3, '{"image_id": "img001.jpg", "label": "lion"}'),
+(1, 4, '{"image_id": "img002.jpg", "label": "zebra"}'),
+(2, 3, '{"image_id": "bird001.jpg", "label": "eagle"}'),
+(3, 4, '{"file": "invoice123.pdf", "fields": {"amount": "$200", "date": "2024-03-15"}}');
+
