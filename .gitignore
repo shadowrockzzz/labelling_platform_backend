@@ -120,8 +120,8 @@ logs/
 # ========================================
 # Environment & Config
 # ========================================
-.env
-.env.*
+# .env
+# .env.*
 !.env.example
 *.local
 *.secret
