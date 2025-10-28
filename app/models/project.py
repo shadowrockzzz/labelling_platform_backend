@@ -10,5 +10,6 @@ class Project(Base):
     description = Column(String, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    modified_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     datasets = relationship("Dataset", back_populates="project")

@@ -9,6 +9,7 @@ class Dataset(Base):
     name = Column(String, nullable=False)
     project_id = Column(Integer, ForeignKey("projects.id"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    modified_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     project = relationship("Project", back_populates="datasets")
     # assets field could be added here

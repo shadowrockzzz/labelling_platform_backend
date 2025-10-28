@@ -11,3 +11,4 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     role = Column(String, default="labeler")  # roles: admin, manager, labeler
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    modified_at = Column(DateTime(timezone=True), onupdate=func.now())
