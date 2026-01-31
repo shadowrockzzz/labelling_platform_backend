@@ -4,17 +4,22 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "LabelBox Clone API"
     API_V1_STR: str = "/api/v1"
 
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "password"
     POSTGRES_SERVER: str = "localhost"
-    POSTGRES_DB: str
+    POSTGRES_DB: str = "postgres"
     DATABASE_URL: str | None = None
 
-    SECRET_KEY: str
-    TOKEN_PROVIDER: str = "simple"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
+    SECRET_KEY: str = "supersecretkey"
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # 15 minutes as per requirements
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7    # 7 days as per requirements
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
+    DEBUG: bool = True
+
+    # CORS settings
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
     class Config:
         env_file = "../.env"
@@ -24,5 +29,3 @@ class Settings(BaseSettings):
         return self.DATABASE_URL or f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}/{self.POSTGRES_DB}"
 
 settings = Settings()
-print(settings.dict())
-print(settings.db_url)

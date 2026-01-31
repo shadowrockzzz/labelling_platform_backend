@@ -1,25 +1,95 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from typing import Optional
+
 from app.core.database import get_db
-from app.schemas.user import UserCreate, UserRead
-from app.crud.user import get_user_by_email, create_user
-from app.core.security import verify_password, token_provider
-from app.schemas.user import UserBase
+from app.schemas.user import UserResponse, UserListResponse, UserUpdate, RoleUpdateRequest
+from app.services.user_service import (
+    list_users,
+    get_user,
+    update_user_role,
+    modify_user,
+    deactivate_user,
+    activate_user
+)
+from app.utils.dependencies import require_admin, require_project_manager, get_current_active_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-@router.post("/signup", response_model=UserRead)
-def signup(user_in: UserCreate, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, email=user_in.email)
-    if user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    user = create_user(db, user_in)
-    return user
+@router.get("", response_model=UserListResponse)
+def get_users_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """
+    Get list of all users (Admin only).
+    Supports pagination with skip and limit parameters.
+    """
+    users = list_users(db, skip=skip, limit=limit)
+    return UserListResponse(success=True, data=users)
 
-@router.post("/login")
-def login(form_data: UserBase, db: Session = Depends(get_db)):
-    user = get_user_by_email(db, email=form_data.email)
-    if not user or not verify_password(form_data.password, user.hashed_password):  # adjust schema accordingly
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
-    token = token_provider.create_token(subject=user.email)
-    return {"access_token": token, "token_type": "bearer"}
+@router.get("/{user_id}", response_model=UserResponse)
+def get_user_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_project_manager)
+):
+    """
+    Get a specific user by ID (Admin/Manager only).
+    """
+    user = get_user(db, user_id)
+    return UserResponse(success=True, data=user)
+
+@router.put("/{user_id}", response_model=UserResponse)
+def update_user_endpoint(
+    user_id: int,
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """
+    Update user information (Admin only).
+    """
+    user = modify_user(db, user_id, user_update)
+    return UserResponse(success=True, data=user)
+
+@router.delete("/{user_id}")
+def deactivate_user_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """
+    Deactivate a user (Admin only).
+    This is a soft delete - the user is marked as inactive.
+    """
+    result = deactivate_user(db, user_id)
+    return result
+
+@router.put("/{user_id}/role", response_model=UserResponse)
+def update_user_role_endpoint(
+    user_id: int,
+    role_update: RoleUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """
+    Update a user's role (Admin only).
+    Valid roles: admin, project_manager, reviewer, annotator
+    """
+    user = update_user_role(db, user_id, role_update.role)
+    return UserResponse(success=True, data=user)
+
+@router.put("/{user_id}/activate")
+def activate_user_endpoint(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """
+    Activate a deactivated user (Admin only).
+    """
+    result = activate_user(db, user_id)
+    return result
