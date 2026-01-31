@@ -12,7 +12,11 @@ from app.services.user_service import (
     deactivate_user,
     activate_user
 )
-from app.utils.dependencies import require_admin, require_project_manager, get_current_active_user
+from app.utils.dependencies import (
+    require_admin,
+    require_project_manager,
+    get_current_active_user
+)
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -63,7 +67,7 @@ def deactivate_user_endpoint(
 ):
     """
     Deactivate a user (Admin only).
-    This is a soft delete - the user is marked as inactive.
+    This is a soft delete - user is marked as inactive.
     """
     result = deactivate_user(db, user_id)
     return result

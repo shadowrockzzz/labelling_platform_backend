@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.api.v1.users import router as users_router
-from app.schemas.auth import LoginRequest, TokenResponse, RefreshTokenRequest, MeResponse, SuccessResponse
+from app.schemas.auth import LoginRequest, LoginResponse, TokenResponse, RefreshTokenRequest, MeResponse, SuccessResponse
 from app.services.auth_service import login, refresh_token, get_current_user_info, logout
 from app.utils.dependencies import get_current_active_user, require_admin
 from app.schemas.user import UserRegister
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=LoginResponse)
 def login_endpoint(
     login_data: LoginRequest,
     db: Session = Depends(get_db)
@@ -19,6 +19,7 @@ def login_endpoint(
     Login endpoint.
     Returns access token, refresh token, and user information.
     """
+    print(login(db, login_data))
     return login(db, login_data)
 
 @router.post("/refresh", response_model=TokenResponse)

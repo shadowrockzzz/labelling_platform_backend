@@ -7,6 +7,7 @@ class LoginRequest(BaseModel):
     password: str
 
 class TokenResponse(BaseModel):
+    success: bool = True
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -41,3 +42,10 @@ class ErrorResponse(BaseModel):
     success: bool = False
     error: str
     details: Optional[dict] = None
+
+class LoginResponse(BaseModel):
+    success: bool = True
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: "UserRead"
