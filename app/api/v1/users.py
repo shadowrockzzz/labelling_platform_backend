@@ -10,7 +10,8 @@ from app.services.user_service import (
     update_user_role,
     modify_user,
     deactivate_user,
-    activate_user
+    activate_user,
+    update_self_profile
 )
 from app.utils.dependencies import (
     require_admin,
@@ -19,6 +20,27 @@ from app.utils.dependencies import (
 )
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
+@router.get("/me", response_model=UserResponse)
+def get_current_user_endpoint(
+    current_user = Depends(get_current_active_user)
+):
+    """
+    Get current user's profile.
+    """
+    return UserResponse(success=True, data=current_user)
+
+@router.put("/me", response_model=UserResponse)
+def update_current_user_endpoint(
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_active_user)
+):
+    """
+    Update current user's own profile (name and bio only).
+    """
+    user = update_self_profile(db, current_user.id, user_update)
+    return UserResponse(success=True, data=user)
 
 @router.get("", response_model=UserListResponse)
 def get_users_endpoint(

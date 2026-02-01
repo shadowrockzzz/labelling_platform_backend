@@ -13,6 +13,8 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     full_name: Optional[str] = None
+    name: Optional[str] = None  # Alias for full_name for frontend compatibility
+    bio: Optional[str] = None
     is_active: Optional[bool] = None
     role: Optional[str] = None
 

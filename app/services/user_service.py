@@ -59,6 +59,10 @@ def modify_user(db: Session, user_id: int, user_update: UserUpdate) -> UserRead:
     # Update fields if provided
     update_data = user_update.model_dump(exclude_unset=True)
     
+    # Map 'name' to 'full_name' for frontend compatibility
+    if "name" in update_data and "full_name" not in update_data:
+        update_data["full_name"] = update_data.pop("name")
+    
     # Validate role if being updated
     if "role" in update_data:
         if not validate_role(update_data["role"]):
@@ -102,3 +106,31 @@ def activate_user(db: Session, user_id: int) -> dict:
     db.commit()
     
     return {"success": True, "message": "User activated successfully"}
+
+def update_self_profile(db: Session, user_id: int, user_update: UserUpdate) -> UserRead:
+    """Update current user's own profile (name and bio only)."""
+    user = get_user_by_id(db, user_id=user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Update fields if provided
+    update_data = user_update.model_dump(exclude_unset=True)
+    
+    # Map 'name' to 'full_name' for frontend compatibility
+    if "name" in update_data and "full_name" not in update_data:
+        update_data["full_name"] = update_data.pop("name")
+    
+    # Only allow updating name and bio for self-profile updates
+    allowed_fields = {"full_name", "bio"}
+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+    
+    for field, value in filtered_data.items():
+        setattr(user, field, value)
+    
+    db.commit()
+    db.refresh(user)
+    
+    return UserRead.model_validate(user)

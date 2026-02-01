@@ -89,12 +89,27 @@ def migrate():
         except Exception as e:
             print(f"Note: {e}")
         
+        # Step 5: Add bio column to users table
+        print("Step 5: Adding bio column to users table...")
+        try:
+            db.execute(text("""
+                ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR
+            """))
+            db.commit()
+            print("✓ Bio column added to users table")
+        except Exception as e:
+            if "already exists" in str(e).lower() or "duplicate column" in str(e).lower():
+                print("✓ Bio column already exists in users table")
+            else:
+                print(f"Note: {e}")
+        
         print("\n✓ Migration completed successfully!")
         print("\nSummary of changes:")
         print("- User roles updated: manager -> project_manager, labeler -> annotator")
         print("- Added status column to projects table")
         print("- Created project_assignments table for team management")
         print("- Updated foreign key constraints with CASCADE delete")
+        print("- Added bio column to users table")
         
     except Exception as e:
         db.rollback()
