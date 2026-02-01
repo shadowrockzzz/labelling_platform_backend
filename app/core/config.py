@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # CORS settings
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5174"]
+    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5174", "http://localhost:5173", "http://localhost:5175"]
 
     class Config:
         env_file = "../.env"
