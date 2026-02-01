@@ -79,8 +79,8 @@ def modify_user(db: Session, user_id: int, user_update: UserUpdate) -> UserRead:
     
     return UserRead.model_validate(user)
 
-def deactivate_user(db: Session, user_id: int) -> dict:
-    """Deactivate a user (soft delete)."""
+def delete_user_from_db(db: Session, user_id: int) -> dict:
+    """Delete a user from database (hard delete)."""
     user = get_user_by_id(db, user_id=user_id)
     if not user:
         raise HTTPException(
@@ -88,10 +88,11 @@ def deactivate_user(db: Session, user_id: int) -> dict:
             detail="User not found"
         )
     
-    user.is_active = False
+    # Hard delete - remove from database
+    db.delete(user)
     db.commit()
     
-    return {"success": True, "message": "User deactivated successfully"}
+    return {"success": True, "message": "User deleted successfully from database"}
 
 def activate_user(db: Session, user_id: int) -> dict:
     """Activate a user."""

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Union
 from sqlalchemy.orm import Session
 from app.models.user import User
 from app.schemas.user import UserCreate
@@ -16,14 +16,24 @@ def get_users(db: Session, skip: int = 0, limit: int = 100):
     """Get list of users with pagination."""
     return db.query(User).offset(skip).limit(limit).all()
 
-def create_user(db: Session, user_in: UserCreate):
+def create_user(db: Session, user_in: Union[UserCreate, dict]):
     """Create a new user (admin only)."""
-    hashed_password = get_password_hash(user_in['password'])
+    # Convert Pydantic model to dictionary if it's not already a dict
+    if isinstance(user_in, dict):
+        user_data = user_in
+    else:
+        user_data = user_in.model_dump()
+    
+    hashed_password = get_password_hash(user_data['password'])
+    
+    # Map 'name' to 'full_name' for frontend compatibility
+    full_name = user_data.get('full_name') or user_data.get('name', '')
+    
     user = User(
-        email=user_in['email'],
-        full_name=user_in['full_name'],
+        email=user_data['email'],
+        full_name=full_name,
         hashed_password=hashed_password,
-        role=user_in['role'] if 'role' in user_in else "annotator"
+        role=user_data.get('role', 'annotator')
     )
     db.add(user)
     db.commit()
@@ -45,11 +55,11 @@ def update_user(db: Session, user_id: int, user_in: dict) -> Optional[User]:
     return user
 
 def delete_user(db: Session, user_id: int) -> bool:
-    """Delete a user (soft delete)."""
+    """Delete a user from database (hard delete)."""
     user = get_user_by_id(db, user_id=user_id)
     if not user:
         return False
     
-    user.is_active = False
+    db.delete(user)
     db.commit()
     return True

@@ -9,7 +9,7 @@ from app.services.user_service import (
     get_user,
     update_user_role,
     modify_user,
-    deactivate_user,
+    delete_user_from_db,
     activate_user,
     update_self_profile
 )
@@ -82,16 +82,16 @@ def update_user_endpoint(
     return UserResponse(success=True, data=user)
 
 @router.delete("/{user_id}")
-def deactivate_user_endpoint(
+def delete_user_endpoint(
     user_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(require_admin)
 ):
     """
-    Deactivate a user (Admin only).
-    This is a soft delete - user is marked as inactive.
+    Delete a user from database (Admin only).
+    This is a hard delete - user is permanently removed from database.
     """
-    result = deactivate_user(db, user_id)
+    result = delete_user_from_db(db, user_id)
     return result
 
 @router.put("/{user_id}/role", response_model=UserResponse)
