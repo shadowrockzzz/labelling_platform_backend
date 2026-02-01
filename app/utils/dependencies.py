@@ -1,12 +1,38 @@
 from typing import Optional, List
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.crud.user import get_user_by_email
 
-def get_current_user_no_dep(token: str, db: Session = Depends(get_db)):
-    """Get current authenticated user from JWT token (no dependency wrapper)."""
+def get_token_from_header(authorization: Optional[str] = Header(None)):
+    """Extract and validate Bearer token from Authorization header."""
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization header missing",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization header format. Expected: Bearer <token>",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = authorization.split(" ")[1]
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token not found in authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return token
+
+def get_current_user_no_dep(token: str = Depends(get_token_from_header), db: Session = Depends(get_db)):
+    """Get current authenticated user from JWT token."""
     email = decode_access_token(token)
     if email is None:
         raise HTTPException(
@@ -32,7 +58,7 @@ def get_current_user_no_dep(token: str, db: Session = Depends(get_db)):
 
 def get_current_active_user(current_user = Depends(get_current_user_no_dep)):
     """Ensure user is active."""
-    if not current_user.is_active:
+    if not bool(current_user.is_active):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
