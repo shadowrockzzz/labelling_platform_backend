@@ -106,8 +106,8 @@ async def upload_resource(
         "file_size": file_size
     })
     
-    # Enqueue task
-    queue = TextQueueStub(db)
+    # Enqueue task with annotation_type
+    queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(project_id, resource.id, "resource_uploaded", {
         "resource_id": resource.id,
         "uploaded_by": user_id
@@ -165,8 +165,8 @@ async def add_url_resource(
         "content_preview": preview
     })
     
-    # Enqueue task
-    queue = TextQueueStub(db)
+    # Enqueue task with annotation_type
+    queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(project_id, resource.id, "resource_url_added", {
         "resource_id": resource.id,
         "url": url
@@ -249,12 +249,12 @@ def submit_annotation_service(
     # Submit
     annotation = submit_annotation(db, annotation_id)
     
-    # Enqueue
-    queue = TextQueueStub(db)
+    # Enqueue with annotation_type and annotation_id
+    queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(annotation.project_id, annotation.resource_id, "annotation_submitted", {
         "annotation_id": annotation.id,
         "annotator_id": user_id
-    })
+    }, annotation_id=annotation.id)
     
     logger.info(f"Submitted annotation {annotation_id}")
     return annotation
@@ -334,13 +334,13 @@ def review_annotation_service(
         # Update annotation with S3 key
         update_annotation(db, annotation_id, {"output_s3_key": s3_key})
     
-    # Enqueue
-    queue = TextQueueStub(db)
+    # Enqueue with annotation_type and annotation_id
+    queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(annotation.project_id, annotation.resource_id, "annotation_reviewed", {
         "annotation_id": annotation.id,
         "reviewer_id": reviewer_id,
         "action": action
-    })
+    }, annotation_id=annotation.id)
     
     logger.info(f"Reviewed annotation {annotation_id}: {action}")
     return annotation

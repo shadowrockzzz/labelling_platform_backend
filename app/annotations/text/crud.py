@@ -170,12 +170,21 @@ def enqueue_task(
     project_id: int,
     resource_id: Optional[int],
     task_type: str,
-    payload: dict
+    payload: dict,
+    annotation_type: str = "text",
+    annotation_id: Optional[int] = None
 ) -> TextAnnotationQueue:
-    """Add a task to the queue."""
+    """
+    Add a task to the queue.
+    
+    Each queue is identified by (project_id, annotation_type) combination.
+    This ensures isolation between different annotation types and projects.
+    """
     task = TextAnnotationQueue(
         project_id=project_id,
+        annotation_type=annotation_type,
         resource_id=resource_id,
+        annotation_id=annotation_id,
         task_type=task_type,
         payload=payload,
         status="pending"
@@ -189,10 +198,18 @@ def enqueue_task(
 def get_queue_tasks(
     db: Session,
     project_id: int,
+    annotation_type: str,
     status: Optional[str] = None
 ) -> List[TextAnnotationQueue]:
-    """Get queue tasks for a project, optionally filtered by status."""
-    query = db.query(TextAnnotationQueue).filter(TextAnnotationQueue.project_id == project_id)
+    """
+    Get queue tasks for a specific project and annotation_type.
+    
+    This ensures each annotation type has its own queue per project.
+    """
+    query = db.query(TextAnnotationQueue).filter(
+        TextAnnotationQueue.project_id == project_id,
+        TextAnnotationQueue.annotation_type == annotation_type
+    )
     
     if status is not None:
         query = query.filter(TextAnnotationQueue.status == status)

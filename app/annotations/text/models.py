@@ -71,11 +71,12 @@ class TextAnnotation(Base):
 
 
 class TextAnnotationQueue(Base):
-    """Stub table for queue simulation. Simulates a task queue locally until RabbitMQ is wired in."""
+    """Queue table for annotation tasks. Supports multiple projects and annotation types."""
     __tablename__ = "text_annotation_queue"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    annotation_type = Column(String(50), nullable=False, default="text", index=True)  # 'text', 'image', 'video', etc.
     resource_id = Column(Integer, ForeignKey("text_resources.id"), nullable=True)
     annotation_id = Column(Integer, ForeignKey("text_annotations.id"), nullable=True)
     task_type = Column(String(50), nullable=False)  # 'create', 'review', 'output'
@@ -90,5 +91,10 @@ class TextAnnotationQueue(Base):
     resource = relationship("TextResource", backref="queue_tasks")
     annotation = relationship("TextAnnotation", backref="queue_tasks")
 
+    # Composite index for efficient querying by project_id + annotation_type
+    __table_args__ = (
+        Index("idx_queue_project_annotation", "project_id", "annotation_type"),
+    )
+
     def __repr__(self):
-        return f"<TextAnnotationQueue(id={self.id}, task_type='{self.task_type}', status='{self.status}')>"
+        return f"<TextAnnotationQueue(id={self.id}, project_id={self.project_id}, annotation_type='{self.annotation_type}', task_type='{self.task_type}', status='{self.status}')>"

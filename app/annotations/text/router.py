@@ -300,18 +300,23 @@ def get_queue_tasks_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_annotator)
 ):
-    """Get queue tasks for a project (admin/PM only)."""
+    """
+    Get queue tasks for a project's text annotation queue.
+    Each project has separate queues for each annotation type.
+    Only admin/PM can view queue.
+    """
     project = check_project_access(db, project_id, current_user)
     
     # Only manager or admin can view queue
     if current_user.role not in ["admin", "project_manager"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only project managers and admins can view the queue"
+            detail="Only project managers and admins can view queue"
         )
     
     from app.annotations.text.crud import get_queue_tasks
-    tasks = get_queue_tasks(db, project_id)
+    # Get tasks for this project's text annotation queue
+    tasks = get_queue_tasks(db, project_id, annotation_type="text")
     
     return QueueListResponse(
         success=True,
