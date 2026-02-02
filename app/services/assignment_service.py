@@ -9,30 +9,57 @@ from app.crud.assignment import (
     get_assignment,
     get_project_counts
 )
-from app.schemas.assignment import AssignmentWithUser, TeamMemberResponse
+from app.schemas.assignment import AssignmentWithUser, TeamMemberResponse, ProjectTeamResponse
 from app.models.user import User
 from app.models.project import Project
 from app.crud.user import get_user_by_id
 from app.crud.project import get_project_by_id
 
-def get_project_team(db: Session, project_id: int) -> TeamMemberResponse:
-    """Get all team members for a project."""
+def get_project_team(db: Session, project_id: int) -> ProjectTeamResponse:
+    """Get all team members for a project, separated by role."""
     team_data = get_team_members(db, project_id)
     
-    team_members = [
-        AssignmentWithUser(
-            id=row.id,
-            project_id=row.project_id,
-            user_id=row.user_id,
-            role=row.role,
-            created_at=row.created_at,
-            user_email=row.user_email,
-            user_full_name=row.user_full_name
-        )
-        for row in team_data
-    ]
+    # Get project owner as manager
+    from app.models.project import Project
+    project = db.query(Project).filter(Project.id == project_id).first()
+    manager = None
+    if project:
+        from app.crud.user import get_user_by_id
+        owner = get_user_by_id(db, project.owner_id)
+        if owner:
+            manager = {
+                'id': owner.id,
+                'full_name': owner.full_name,
+                'email': owner.email,
+                'role': owner.role
+            }
     
-    return TeamMemberResponse(success=True, data=team_members)
+    # Separate members by role
+    reviewers = []
+    annotators = []
+    
+    for row in team_data:
+        member = {
+            'id': row.user_id,
+            'full_name': row.user_full_name,
+            'email': row.user_email,
+            'role': row.user_role,
+            'assignment_role': row.role
+        }
+        
+        if row.role == 'reviewer':
+            reviewers.append(member)
+        elif row.role == 'annotator':
+            annotators.append(member)
+    
+    return ProjectTeamResponse(
+        success=True,
+        data={
+            'manager': manager,
+            'reviewers': reviewers,
+            'annotators': annotators
+        }
+    )
 
 def add_reviewers(db: Session, project_id: int, user_ids: List[int]) -> dict:
     """Add multiple reviewers to a project."""

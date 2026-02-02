@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     # CORS settings
     BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5174", "http://localhost:5173", "http://localhost:5175"]
 
+    # AWS S3 settings
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_ENDPOINT: str = ""  # For S3-compatible services (e.g., MinIO)
+
     class Config:
         env_file = "../.env"
 

@@ -1,10 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import Optional
 
 from app.core.database import get_db
 from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectRead, ProjectResponse, ProjectListResponse
-from app.crud.project import get_projects, create_project, get_project_by_id, update_project, delete_project
+from app.crud.project import (
+    get_projects, create_project, get_project_by_id, 
+    update_project as update_project_crud, 
+    delete_project as delete_project_crud
+)
 from app.crud.assignment import get_project_counts
 from app.utils.dependencies import require_admin, require_project_manager, require_annotator, get_current_active_user
 from app.models.project import Project
@@ -30,8 +35,10 @@ def list_projects(
     elif current_user.role == "project_manager":
         # Manager sees owned projects
         projects = db.query(Project).filter(
-            (Project.owner_id == current_user.id) | 
-            (Project.id.in_([a.project_id for a in current_user.assignments]))
+            or_(
+                Project.owner_id == current_user.id, 
+                Project.id.in_([a.project_id for a in current_user.assignments])
+            )
         ).offset(skip).limit(limit).all()
     else:
         # Reviewer/Annotator see assigned projects
@@ -106,7 +113,8 @@ def update_project(
 ):
     """
     Update project details.
-    User must be the owner or an admin.
+    User must be owner or an admin.
+    Only admins can change the project owner.
     """
     project = get_project_by_id(db, project_id)
     if not project:
@@ -122,7 +130,14 @@ def update_project(
             detail="Only project owner or admin can update this project"
         )
     
-    project = update_project(db, project_id, project_update)
+    # Only admins can change the owner
+    if project_update.owner_id is not None and current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can change the project owner"
+        )
+    
+    project = update_project_crud(db, project_id, project_update)
     
     # Add team counts
     counts = get_project_counts(db, project_id)
@@ -142,7 +157,7 @@ def delete_project(
     Delete a project (Admin only).
     This will cascade delete all related data.
     """
-    success = delete_project(db, project_id)
+    success = delete_project_crud(db, project_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

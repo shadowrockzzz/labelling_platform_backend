@@ -50,7 +50,8 @@ def get_team_members(db: Session, project_id: int) -> List[dict]:
         ProjectAssignment.role,
         ProjectAssignment.created_at,
         User.email.label("user_email"),
-        User.full_name.label("user_full_name")
+        User.full_name.label("user_full_name"),
+        User.role.label("user_role")
     ).join(
         User, ProjectAssignment.user_id == User.id
     ).filter(

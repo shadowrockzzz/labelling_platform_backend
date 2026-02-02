@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.api.v1 import users, projects, datasets, annotations, auth, assignments
+from app.annotations.text.router import router as text_annotation_router
 
 # For dev: create tables automatically
 Base.metadata.create_all(bind=engine)
@@ -26,6 +27,7 @@ app.include_router(projects.router, prefix=settings.API_V1_STR)
 app.include_router(assignments.router, prefix=settings.API_V1_STR)
 app.include_router(datasets.router, prefix=settings.API_V1_STR)
 app.include_router(annotations.router, prefix=settings.API_V1_STR)
+app.include_router(text_annotation_router, prefix=f"{settings.API_V1_STR}/annotations/text", tags=["Text Annotations"])
 
 # Global exception handlers
 @app.exception_handler(Exception)

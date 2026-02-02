@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.schemas.assignment import AddTeamMembersRequest, TeamMemberResponse, SuccessResponse
+from app.schemas.assignment import AddTeamMembersRequest, TeamMemberResponse, SuccessResponse, ProjectTeamResponse
 from app.services.assignment_service import (
     get_project_team,
     add_reviewers,
@@ -14,7 +14,7 @@ from app.utils.dependencies import require_admin, require_project_manager, requi
 
 router = APIRouter(tags=["Project Assignments"])
 
-@router.get("/projects/{project_id}/team", response_model=TeamMemberResponse)
+@router.get("/projects/{project_id}/team", response_model=ProjectTeamResponse)
 def get_project_team_endpoint(
     project_id: int,
     db: Session = Depends(get_db),

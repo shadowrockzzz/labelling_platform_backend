@@ -16,7 +16,9 @@ def create_project(db: Session, project_in: ProjectCreate, owner_id: int) -> Pro
     project = Project(
         name=project_in.name,
         description=project_in.description,
-        owner_id=owner_id
+        owner_id=owner_id,
+        annotation_type=project_in.annotation_type,
+        config=project_in.config
     )
     db.add(project)
     db.commit()

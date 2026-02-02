@@ -20,6 +20,12 @@ class AssignmentRead(BaseModel):
 class AssignmentWithUser(AssignmentRead):
     user_email: str
     user_full_name: Optional[str] = None
+    user_role: Optional[str] = None  # Include user role from User model
+
+class ProjectTeamResponse(BaseModel):
+    """Response with team members separated by role."""
+    success: bool = True
+    data: dict  # Will contain {manager, reviewers, annotators}
 
 class TeamMemberResponse(BaseModel):
     success: bool = True

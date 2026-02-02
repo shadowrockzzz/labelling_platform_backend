@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, func, JSON
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -11,11 +11,13 @@ class Project(Base):
     description = Column(String, nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     status = Column(String, default="active")  # 'active', 'completed', 'archived'
+    annotation_type = Column(String(50), nullable=True)  # 'text', 'image_classification', etc.
+    config = Column(JSON, nullable=True)  # Dynamic configuration based on annotation_type
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     modified_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
-    owner = relationship("User", back_populates="owned_projects")
+    owner = relationship("User", back_populates="owned_projects", lazy="joined")
     datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
     assignments = relationship("ProjectAssignment", back_populates="project", cascade="all, delete-orphan")
 

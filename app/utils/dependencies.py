@@ -1,6 +1,6 @@
 from typing import Optional, List
 from fastapi import Depends, HTTPException, status, Header
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.crud.user import get_user_by_email
@@ -53,6 +53,10 @@ def get_current_user_no_dep(token: str = Depends(get_token_from_header), db: Ses
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user"
         )
+    
+    # Eager load assignments to avoid lazy loading issues
+    from app.models.user import User
+    user = db.query(User).options(selectinload(User.assignments)).filter(User.id == user.id).first()
     
     return user
 
