@@ -40,7 +40,10 @@ class TextAnnotationProcessor(BaseAnnotationProcessor):
         """Validate text annotation input."""
         if not data.get("resource_id"):
             return False
-        if data.get("annotation_type") not in ["ner", "classification", "sentiment", "general"]:
+        # annotation_sub_type can be any of the 8 types
+        valid_sub_types = ["ner", "pos", "sentiment", "relation", "span", "classification", "dependency", "coreference"]
+        sub_type = data.get("annotation_sub_type", "ner")
+        if sub_type not in valid_sub_types:
             return False
         return True
     
@@ -51,6 +54,116 @@ class TextAnnotationProcessor(BaseAnnotationProcessor):
     def get_output_path(self, project_id: int, annotation_id: int) -> str:
         """Generate S3 path for output."""
         return f"projects/{project_id}/outputs/text/{annotation_id}.json"
+
+
+def format_annotation_output(annotation) -> dict:
+    """
+    Format annotation to type-specific JSON output structure.
+    
+    Returns different structure based on annotation.annotation_sub_type.
+    """
+    sub_type = annotation.annotation_sub_type or "ner"
+    resource_text = annotation.annotation_data.get("text", "") if annotation.annotation_data else ""
+    
+    base_output = {
+        "annotation_id": annotation.id,
+        "annotation_type": "text",
+        "sub_type": sub_type,
+        "project_id": annotation.project_id,
+        "resource_id": annotation.resource_id,
+        "status": annotation.status,
+        "created_at": annotation.created_at.isoformat() if annotation.created_at else None,
+    }
+    
+    if sub_type == "ner":
+        base_output.update({
+            "entities": [{
+                "label": annotation.label,
+                "text": annotation.annotation_data.get("entity_text", resource_text),
+                "start": annotation.span_start,
+                "end": annotation.span_end,
+                "confidence": annotation.annotation_data.get("confidence", 1.0)
+            }] if annotation.label and annotation.span_start is not None else []
+        })
+    
+    elif sub_type == "pos":
+        base_output.update({
+            "tokens": [{
+                "token": annotation.annotation_data.get("token", ""),
+                "pos": annotation.label,
+                "start": annotation.span_start,
+                "end": annotation.span_end
+            }] if annotation.label and annotation.span_start is not None else []
+        })
+    
+    elif sub_type == "sentiment":
+        base_output.update({
+            "segments": [{
+                "text": annotation.annotation_data.get("text", resource_text),
+                "sentiment": annotation.label,
+                "intensity": annotation.annotation_data.get("intensity", 0),
+                "start": annotation.span_start,
+                "end": annotation.span_end,
+                "emotions": annotation.annotation_data.get("emotions", {})
+            }] if annotation.label and annotation.span_start is not None else []
+        })
+    
+    elif sub_type == "relation":
+        base_output.update({
+            "relations": [{
+                "head": annotation.annotation_data.get("head_entity", {}),
+                "tail": annotation.annotation_data.get("tail_entity", {}),
+                "relation": annotation.annotation_data.get("relation_label", annotation.label),
+                "confidence": annotation.annotation_data.get("confidence", 1.0)
+            }] if annotation.annotation_data else []
+        })
+    
+    elif sub_type == "span":
+        base_output.update({
+            "spans": [{
+                "text": annotation.annotation_data.get("text", resource_text),
+                "category": annotation.label,
+                "subcategory": annotation.annotation_data.get("subcategory"),
+                "start": annotation.span_start,
+                "end": annotation.span_end,
+                "priority": annotation.annotation_data.get("priority", 1),
+                "overlaps_with": annotation.annotation_data.get("overlaps_with", [])
+            }] if annotation.label and annotation.span_start is not None else []
+        })
+    
+    elif sub_type == "classification":
+        base_output.update({
+            "document_classes": annotation.annotation_data.get("classes", []) if annotation.annotation_data else [],
+            "classification_type": annotation.annotation_data.get("classification_type", "multi_class") if annotation.annotation_data else "multi_class"
+        })
+    
+    elif sub_type == "dependency":
+        base_output.update({
+            "dependencies": [{
+                "head": annotation.annotation_data.get("head_token", ""),
+                "head_index": annotation.annotation_data.get("head_index", 0),
+                "dependent": annotation.annotation_data.get("dependent_token", ""),
+                "dependent_index": annotation.annotation_data.get("dependent_index", 0),
+                "relation": annotation.annotation_data.get("relation", annotation.label)
+            }] if annotation.annotation_data else [],
+            "root_token": annotation.annotation_data.get("root_token", "") if annotation.annotation_data else ""
+        })
+    
+    elif sub_type == "coreference":
+        base_output.update({
+            "chains": [{
+                "chain_id": annotation.annotation_data.get("chain_id", ""),
+                "mentions": [{
+                    "text": annotation.annotation_data.get("mention_text", resource_text),
+                    "start": annotation.span_start,
+                    "end": annotation.span_end,
+                    "type": annotation.annotation_data.get("mention_type", "proper_noun"),
+                    "is_representative": annotation.annotation_data.get("is_representative", False)
+                }] if annotation.span_start is not None else []
+            }] if annotation.annotation_data else []
+        })
+    
+    return base_output
 
 
 async def upload_resource(
@@ -106,11 +219,12 @@ async def upload_resource(
         "file_size": file_size
     })
     
-    # Enqueue task with annotation_type
+    # Enqueue task with annotation_type='text' and annotation_sub_type
     queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(project_id, resource.id, "resource_uploaded", {
         "resource_id": resource.id,
-        "uploaded_by": user_id
+        "uploaded_by": user_id,
+        "annotation_sub_type": None  # Resource upload doesn't have sub-type
     })
     
     logger.info(f"Uploaded resource {resource.id} to project {project_id}")
@@ -165,11 +279,12 @@ async def add_url_resource(
         "content_preview": preview
     })
     
-    # Enqueue task with annotation_type
+    # Enqueue task with annotation_type='text' and annotation_sub_type
     queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(project_id, resource.id, "resource_url_added", {
         "resource_id": resource.id,
-        "url": url
+        "url": url,
+        "annotation_sub_type": None  # URL resource doesn't have sub-type
     })
     
     logger.info(f"Added URL resource {resource.id} to project {project_id}")
@@ -249,11 +364,12 @@ def submit_annotation_service(
     # Submit
     annotation = submit_annotation(db, annotation_id)
     
-    # Enqueue with annotation_type and annotation_id
+    # Enqueue with annotation_type='text', annotation_sub_type, and annotation_id
     queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(annotation.project_id, annotation.resource_id, "annotation_submitted", {
         "annotation_id": annotation.id,
-        "annotator_id": user_id
+        "annotator_id": user_id,
+        "annotation_sub_type": annotation.annotation_sub_type
     }, annotation_id=annotation.id)
     
     logger.info(f"Submitted annotation {annotation_id}")
@@ -307,39 +423,21 @@ def review_annotation_service(
         processor = TextAnnotationProcessor()
         s3_key = processor.get_output_path(annotation.project_id, annotation.id)
         
-        output_data = {
-            "annotation_id": annotation.id,
-            "project_id": annotation.project_id,
-            "resource_id": annotation.resource_id,
-            "annotation_type": annotation.annotation_type,
-            "sub_type": annotation.annotation_type,
-            "label": annotation.label,
-            "span": {
-                "start": annotation.span_start,
-                "end": annotation.span_end,
-                "text": ""  # Would need to fetch from resource
-            },
-            "annotation_data": annotation.annotation_data,
-            "status": annotation.status,
-            "annotator_id": annotation.annotator_id,
-            "reviewer_id": annotation.reviewer_id,
-            "review_comment": annotation.review_comment,
-            "created_at": annotation.created_at.isoformat() if annotation.created_at else None,
-            "submitted_at": annotation.submitted_at.isoformat() if annotation.submitted_at else None,
-            "reviewed_at": annotation.reviewed_at.isoformat() if annotation.reviewed_at else None
-        }
+        # Use type-specific output format
+        output_data = format_annotation_output(annotation)
         
         save_json_to_s3(output_data, s3_key)
         
         # Update annotation with S3 key
         update_annotation(db, annotation_id, {"output_s3_key": s3_key})
     
-    # Enqueue with annotation_type and annotation_id
+    # Enqueue with annotation_type='text', annotation_sub_type, and annotation_id
     queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(annotation.project_id, annotation.resource_id, "annotation_reviewed", {
         "annotation_id": annotation.id,
         "reviewer_id": reviewer_id,
-        "action": action
+        "action": action,
+        "annotation_sub_type": annotation.annotation_sub_type
     }, annotation_id=annotation.id)
     
     logger.info(f"Reviewed annotation {annotation_id}: {action}")

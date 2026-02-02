@@ -41,7 +41,8 @@ class TextAnnotation(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     annotator_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # null until assigned
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    annotation_type = Column(String(50), nullable=False, default="general")  # sub-types: 'ner', 'classification', 'sentiment', 'general'
+    annotation_type = Column(String(50), nullable=False, default="text")  # module-level: 'text', 'image', 'video', etc.
+    annotation_sub_type = Column(String(50), nullable=True)  # sub-types: 'ner', 'pos', 'sentiment', 'relation', 'span', 'classification', 'dependency', 'coreference'
     status = Column(String(30), nullable=False, default="pending")  # uses AnnotationStatus enum values
     label = Column(String(100), nullable=True)
     span_start = Column(Integer, nullable=True)  # char index start (for NER spans)
@@ -67,7 +68,7 @@ class TextAnnotation(Base):
     )
 
     def __repr__(self):
-        return f"<TextAnnotation(id={self.id}, resource_id={self.resource_id}, status='{self.status}')>"
+        return f"<TextAnnotation(id={self.id}, resource_id={self.resource_id}, sub_type='{self.annotation_sub_type}', status='{self.status}')>"
 
 
 class TextAnnotationQueue(Base):

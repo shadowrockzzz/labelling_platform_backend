@@ -1,7 +1,55 @@
 from sqlalchemy.orm import Session
 from typing import Optional, Tuple, List
+from pydantic import ValidationError
 from app.annotations.text.models import TextResource, TextAnnotation, TextAnnotationQueue
+from app.annotations.text.schemas import (
+    NERAnnotationData,
+    POSAnnotationData,
+    SentimentAnnotationData,
+    RelationAnnotationData,
+    SpanAnnotationData,
+    ClassificationAnnotationData,
+    DependencyAnnotationData,
+    CoreferenceAnnotationData
+)
 from app.models.project import Project
+
+
+# ==================== Annotation Data Validation ====================
+
+def validate_annotation_data(annotation_sub_type: str, data: Optional[dict]) -> None:
+    """
+    Validate annotation_data structure matches the sub-type schema.
+    
+    Args:
+        annotation_sub_type: The annotation sub-type (e.g., 'ner', 'pos', 'sentiment', etc.)
+        data: The annotation_data dict to validate
+    
+    Raises:
+        ValueError: If sub-type is invalid or data doesn't match schema
+    """
+    if not data:
+        return
+    
+    sub_type_schemas = {
+        'ner': NERAnnotationData,
+        'pos': POSAnnotationData,
+        'sentiment': SentimentAnnotationData,
+        'relation': RelationAnnotationData,
+        'span': SpanAnnotationData,
+        'classification': ClassificationAnnotationData,
+        'dependency': DependencyAnnotationData,
+        'coreference': CoreferenceAnnotationData,
+    }
+    
+    schema_class = sub_type_schemas.get(annotation_sub_type)
+    if not schema_class:
+        raise ValueError(f"Invalid annotation_sub_type: {annotation_sub_type}. Must be one of: {list(sub_type_schemas.keys())}")
+    
+    try:
+        schema_class(**data)
+    except ValidationError as e:
+        raise ValueError(f"Invalid annotation_data for {annotation_sub_type}: {e}")
 
 
 # ==================== Resources CRUD ====================
@@ -75,7 +123,18 @@ def create_annotation(
     annotator_id: int,
     data: dict
 ) -> TextAnnotation:
-    """Create a new annotation."""
+    """
+    Create a new annotation.
+    
+    Validates annotation_data structure if annotation_sub_type is provided.
+    """
+    annotation_sub_type = data.get('annotation_sub_type')
+    annotation_data = data.get('annotation_data')
+    
+    # Validate annotation_data if sub_type is provided
+    if annotation_sub_type and annotation_data:
+        validate_annotation_data(annotation_sub_type, annotation_data)
+    
     annotation = TextAnnotation(
         project_id=project_id,
         annotator_id=annotator_id,
