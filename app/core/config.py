@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pathlib import Path
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "LabelBox Clone API"
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
 
     SECRET_KEY: str = "supersecretkey"
     ALGORITHM: str = "HS256"
+    TOKEN_PROVIDER: str = "jwt"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # 15 minutes as per requirements
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7    # 7 days as per requirements
     POSTGRES_HOST: str = "localhost"
@@ -29,7 +31,7 @@ class Settings(BaseSettings):
     AWS_S3_ENDPOINT: str = ""  # For S3-compatible services (e.g., MinIO)
 
     class Config:
-        env_file = "../.env"
+        env_file = str(Path(__file__).parent.parent.parent / ".env")
 
     @property
     def db_url(self):

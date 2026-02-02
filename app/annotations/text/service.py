@@ -469,9 +469,19 @@ def get_resource_with_content(db: Session, resource_id: int) -> dict:
             logger.error(f"Error downloading from S3: {e}")
     
     # For URL type, client will fetch content
-    # We return the resource with optional full_content
+    # We return resource with optional full_content
     
     return {
-        **resource.__dict__,
+        "id": resource.id,
+        "project_id": resource.project_id,
+        "name": resource.name,
+        "source_type": resource.source_type,
+        "s3_key": resource.s3_key,
+        "external_url": resource.external_url,
+        "content_preview": resource.content_preview,
+        "file_size": resource.file_size,
+        "uploaded_by": resource.uploaded_by,
+        "created_at": resource.created_at,
+        "status": resource.status,
         "full_content": full_content
     }
