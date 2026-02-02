@@ -63,31 +63,19 @@ async def upload_resource(
     """
     Upload a text file as a resource.
     
-    1. Validate user has access to project
+    1. Get project (access validated by router's check_project_access)
     2. Generate S3 key
     3. Upload file to S3
     4. Read first 500 chars as preview
     5. Create TextResource record
     6. Enqueue task
     """
-    # Validate user is assigned to project
+    # Get project (access already validated by router's check_project_access)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
-        )
-    
-    # Check permissions (annotator or higher)
-    user_role = db.query(ProjectAssignment).filter(
-        ProjectAssignment.project_id == project_id,
-        ProjectAssignment.user_id == user_id
-    ).first()
-    
-    if not user_role and project.owner_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this project"
         )
     
     # Read file content
@@ -139,29 +127,18 @@ async def add_url_resource(
     """
     Add a URL as a text resource.
     
-    1. Validate permissions
+    1. Get project (access validated by router's check_project_access)
     2. Create TextResource with URL
     3. Fetch first 500 chars for preview
     4. Store metadata to S3
     5. Enqueue task
     """
-    # Validate user has access
+    # Get project (access already validated by router's check_project_access)
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
-        )
-    
-    user_role = db.query(ProjectAssignment).filter(
-        ProjectAssignment.project_id == project_id,
-        ProjectAssignment.user_id == user_id
-    ).first()
-    
-    if not user_role and project.owner_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You do not have access to this project"
         )
     
     # Fetch preview from URL (best effort)
