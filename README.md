@@ -243,12 +243,26 @@ docker build -t labelling-platform-backend .
 docker run -p 8000:8000 --env-file .env labelling-platform-backend
 ```
 
+## Documentation
+
+- [Custom Labels Feature](docs/CUSTOM_LABELS_FEATURE.md) - Detailed guide for custom labels in text annotation
+- [Annotation Fixes Summary](docs/ANNOTATION_FIXES_SUMMARY.md) - Summary of bug fixes and improvements
+- [Getting Started Guide](docs/GETTING_STARTED.md) - Quick start guide
+- [Setup Guide](docs/SETUP_GUIDE.md) - Detailed setup instructions
+- [S3 Setup Guide](docs/S3_SETUP_GUIDE.md) - AWS S3 integration setup
+- [Bug Fix Log](docs/BUG_FIX_LOG.md) - History of bug fixes
+
 ## Troubleshooting
 
 ### Database Connection Issues
 - Ensure PostgreSQL is running
 - Check DATABASE_URL in .env file
 - Verify database user has proper permissions
+
+### Annotation Issues
+- If you encounter 500 errors when creating annotations, see [Annotation Fixes Summary](docs/ANNOTATION_FIXES_SUMMARY.md)
+- For CORS errors, restart the backend server
+- For permission errors (403), ensure user has proper role assignment
 
 ### Import Errors
 - Ensure virtual environment is activated
