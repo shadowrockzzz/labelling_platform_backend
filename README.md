@@ -19,6 +19,9 @@ A FastAPI-based backend for an annotation platform with role-based authenticatio
   - Create, read, update, delete projects
   - Team member assignments (managers, reviewers, annotators)
   - Project status tracking (active, completed, archived)
+  - Custom labels for text annotation projects
+  - Label configuration with hex colors
+  - Support for multiple annotation sub-types (NER, POS, Sentiment, etc.)
 
 - **Team Management**
   - Assign 0 to unlimited reviewers per project
@@ -106,6 +109,8 @@ Once the server is running, visit:
 - `description`: Project description (optional)
 - `owner_id`: Foreign key to users table
 - `status`: One of: active, completed, archived
+- `annotation_type`: Type of annotation (text, image, audio, video)
+- `config`: JSON configuration including custom labels (for text annotation)
 - `created_at`: Project creation timestamp
 - `modified_at`: Last update timestamp
 
@@ -139,8 +144,13 @@ Once the server is running, visit:
 
 - `GET /` - List projects (filtered by user role)
 - `POST /` - Create project (Admin/Manager)
+  - Supports custom labels for text annotation
+  - Configurable label names and colors
+  - Multiple annotation sub-types supported
 - `GET /{id}` - Get project details
+  - Includes custom label configuration
 - `PUT /{id}` - Update project (Admin/Manager or owner)
+  - Update label configuration
 - `DELETE /{id}` - Delete project (Admin only)
 
 ### Project Assignments (`/api/v1`)
@@ -258,6 +268,39 @@ docker run -p 8000:8000 --env-file .env labelling-platform-backend
 3. Create CRUD operations in `app/crud/`
 4. Define schemas in `app/schemas/`
 5. Update `app/main.py` to include new router
+
+### Custom Labels Feature
+
+The backend supports custom labels for text annotation projects:
+
+**Config Structure:**
+```json
+{
+  "textSubType": "ner",
+  "useCustomLabels": true,
+  "customLabels": [
+    {"name": "PERSON", "color": "#3B82F6"},
+    {"name": "ORGANIZATION", "color": "#10B981"}
+  ]
+}
+```
+
+**Supported Sub-Types:**
+- `ner` - Named Entity Recognition
+- `pos` - Part-of-Speech Tagging
+- `sentiment` - Sentiment Analysis
+- `span` - Span Annotation
+- `relation` - Relation Extraction
+- `classification` - Text Classification
+- `dependency` - Dependency Parsing
+- `coreference` - Coreference Resolution
+
+**Label Validation:**
+- 1-20 labels per project
+- Label names: 1-50 characters, unique (case-insensitive)
+- Colors: Hex format (#RRGGBB)
+
+See [docs/CUSTOM_LABELS_FEATURE.md](docs/CUSTOM_LABELS_FEATURE.md) for detailed documentation.
 
 ### Code Structure
 
