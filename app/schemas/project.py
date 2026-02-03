@@ -36,6 +36,12 @@ class ProjectCreate(ProjectBase):
         if not v:
             return v
             
+        # Validate classification type if present
+        if 'classificationType' in v:
+            valid_types = ['binary', 'multi_class', 'multi_label']
+            if v['classificationType'] not in valid_types:
+                raise ValueError(f'classificationType must be one of: {", ".join(valid_types)}')
+            
         # Validate label configuration if present
         if 'customLabels' in v:
             if not isinstance(v['customLabels'], list):
@@ -77,6 +83,12 @@ class ProjectUpdate(BaseModel):
         """Validate project configuration including label settings."""
         if not v:
             return v
+            
+        # Validate classification type if present
+        if 'classificationType' in v:
+            valid_types = ['binary', 'multi_class', 'multi_label']
+            if v['classificationType'] not in valid_types:
+                raise ValueError(f'classificationType must be one of: {", ".join(valid_types)}')
             
         # Validate label configuration if present
         if 'customLabels' in v:
