@@ -59,6 +59,7 @@ class TextAnnotation(Base):
     resource = relationship("TextResource", back_populates="annotations")
     annotator = relationship("User", foreign_keys=[annotator_id], backref="text_annotations_created")
     reviewer = relationship("User", foreign_keys=[reviewer_id], backref="text_annotations_reviewed")
+    review_corrections = relationship("ReviewCorrection", back_populates="annotation", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_text_annotations_project", "project_id"),

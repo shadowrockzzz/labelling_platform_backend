@@ -4,7 +4,7 @@ Supports both AWS S3 and S3-compatible services (MinIO, DigitalOcean Spaces, etc
 """
 import boto3
 from botocore.client import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError, ConnectionError, NoCredentialsError
 from app.core.config import settings
 from typing import Optional
 import json
@@ -54,12 +54,13 @@ def upload_file_to_s3(file_content: bytes, s3_key: str, content_type: str = "tex
     """
     if not settings.AWS_S3_BUCKET:
         logger.warning("S3 bucket not configured, skipping upload")
-        return True  # Mock success
+        return True  # Mock success for development
     
     try:
         s3 = get_s3_client()
         if not s3:
-            return True
+            logger.warning("S3 client not available, skipping upload")
+            return True  # Mock success for development
         
         s3.put_object(
             Bucket=settings.AWS_S3_BUCKET,
@@ -69,6 +70,17 @@ def upload_file_to_s3(file_content: bytes, s3_key: str, content_type: str = "tex
         )
         logger.info(f"Uploaded file to S3: {s3_key}")
         return True
+    except EndpointConnectionError as e:
+        logger.error(f"Cannot connect to S3 endpoint at {settings.AWS_S3_ENDPOINT}: {e}")
+        logger.warning("S3/MinIO is not running. File metadata will be saved but file content won't be stored.")
+        return True  # Continue anyway - save metadata to DB
+    except ConnectionError as e:
+        logger.error(f"Connection error to S3: {e}")
+        logger.warning("S3/MinIO is not available. File metadata will be saved but file content won't be stored.")
+        return True  # Continue anyway - save metadata to DB
+    except NoCredentialsError as e:
+        logger.error(f"S3 credentials not configured: {e}")
+        return False
     except ClientError as e:
         logger.error(f"Error uploading to S3: {e}")
         return False

@@ -14,7 +14,13 @@ from app.annotations.text.crud import (
     get_annotation,
     update_annotation,
     submit_annotation,
-    review_annotation
+    review_annotation,
+    get_or_create_annotation,
+    add_span_to_annotation,
+    remove_span_from_annotation,
+    update_span_in_annotation,
+    get_annotation_with_spans,
+    is_array_annotation
 )
 from app.annotations.text.queue_stub import TextQueueStub
 from app.annotations.base import BaseAnnotationProcessor
@@ -61,9 +67,9 @@ def format_annotation_output(annotation) -> dict:
     Format annotation to type-specific JSON output structure.
     
     Returns different structure based on annotation.annotation_sub_type.
+    Supports both old format (single span) and new format (spans array).
     """
     sub_type = annotation.annotation_sub_type or "ner"
-    resource_text = annotation.annotation_data.get("text", "") if annotation.annotation_data else ""
     
     base_output = {
         "annotation_id": annotation.id,
@@ -74,6 +80,116 @@ def format_annotation_output(annotation) -> dict:
         "status": annotation.status,
         "created_at": annotation.created_at.isoformat() if annotation.created_at else None,
     }
+    
+    # Check if using new array-based format
+    if is_array_annotation(annotation):
+        # New format: spans array in annotation_data
+        spans = annotation.annotation_data.get("spans", [])
+        
+        if sub_type == "ner":
+            base_output.update({
+                "entities": [{
+                    "id": span.get("id"),
+                    "label": span.get("label"),
+                    "text": span.get("text"),
+                    "start": span.get("start"),
+                    "end": span.get("end"),
+                    "confidence": span.get("confidence", 1.0),
+                    "nested": span.get("nested", False)
+                } for span in spans]
+            })
+        
+        elif sub_type == "pos":
+            base_output.update({
+                "tokens": [{
+                    "id": span.get("id"),
+                    "token": span.get("text"),
+                    "pos": span.get("label"),
+                    "token_index": span.get("token_index"),
+                    "start": span.get("start"),
+                    "end": span.get("end")
+                } for span in spans]
+            })
+        
+        elif sub_type == "sentiment":
+            base_output.update({
+                "segments": [{
+                    "id": span.get("id"),
+                    "text": span.get("text"),
+                    "sentiment": span.get("label"),
+                    "intensity": span.get("intensity", 0),
+                    "emotions": span.get("emotions", {}),
+                    "start": span.get("start"),
+                    "end": span.get("end")
+                } for span in spans]
+            })
+        
+        elif sub_type == "relation":
+            base_output.update({
+                "relations": [{
+                    "id": span.get("id"),
+                    "head": span.get("head_entity", {}),
+                    "tail": span.get("tail_entity", {}),
+                    "relation": span.get("relation_label", span.get("label")),
+                    "confidence": span.get("confidence", 1.0)
+                } for span in spans]
+            })
+        
+        elif sub_type == "span":
+            base_output.update({
+                "spans": [{
+                    "id": span.get("id"),
+                    "text": span.get("text"),
+                    "category": span.get("label"),
+                    "subcategory": span.get("subcategory"),
+                    "start": span.get("start"),
+                    "end": span.get("end"),
+                    "priority": span.get("priority", 1),
+                    "overlaps_with": span.get("overlaps_with", [])
+                } for span in spans]
+            })
+        
+        elif sub_type == "classification":
+            base_output.update({
+                "document_classes": [{
+                    "id": span.get("id"),
+                    "label": span.get("label"),
+                    "confidence": span.get("confidence", 1.0)
+                } for span in spans],
+                "classification_type": spans[0].get("classification_type", "multi_class") if spans else "multi_class"
+            })
+        
+        elif sub_type == "dependency":
+            base_output.update({
+                "dependencies": [{
+                    "id": span.get("id"),
+                    "head": span.get("head_token"),
+                    "head_index": span.get("head_index"),
+                    "dependent": span.get("dependent_token"),
+                    "dependent_index": span.get("dependent_index"),
+                    "relation": span.get("relation", span.get("label")),
+                    "is_root": span.get("is_root", False)
+                } for span in spans]
+            })
+        
+        elif sub_type == "coreference":
+            base_output.update({
+                "chains": [{
+                    "chain_id": span.get("chain_id"),
+                    "mention_id": span.get("id"),
+                    "text": span.get("text"),
+                    "start": span.get("start"),
+                    "end": span.get("end"),
+                    "type": span.get("mention_type"),
+                    "is_representative": span.get("is_representative", False),
+                    "other_mentions": span.get("other_mentions", [])
+                } for span in spans]
+            })
+        
+        return base_output
+    
+    # Old format (backward compatibility)
+    resource_text = annotation.annotation_data.get("text", "") if annotation.annotation_data else ""
     
     if sub_type == "ner":
         base_output.update({
@@ -485,3 +601,157 @@ def get_resource_with_content(db: Session, resource_id: int) -> dict:
         "status": resource.status,
         "full_content": full_content
     }
+
+
+# ==================== Single-Annotation Model Services (New) ====================
+
+def add_span_to_annotation_service(
+    db: Session,
+    project_id: int,
+    annotator_id: int,
+    resource_id: int,
+    annotation_sub_type: str,
+    span_data: dict
+) -> dict:
+    """
+    Add a span to an annotation for a resource.
+    
+    1. Validate user is annotator on project
+    2. Get or create annotation for resource
+    3. Add span to annotation
+    """
+    # Validate user is assigned as annotator or higher
+    assignment = db.query(ProjectAssignment).filter(
+        ProjectAssignment.project_id == project_id,
+        ProjectAssignment.user_id == annotator_id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You must be assigned to this project to add annotations"
+        )
+    
+    # Validate resource
+    resource = get_resource(db, resource_id)
+    if not resource or resource.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found or does not belong to this project"
+        )
+    
+    # Get or create annotation
+    annotation = get_or_create_annotation(
+        db, project_id, annotator_id, resource_id, annotation_sub_type
+    )
+    
+    # Add span
+    annotation = add_span_to_annotation(db, annotation.id, span_data)
+    
+    logger.info(f"Added span to annotation {annotation.id} by user {annotator_id}")
+    return annotation
+
+
+def remove_span_from_annotation_service(
+    db: Session,
+    project_id: int,
+    user_id: int,
+    annotation_id: int,
+    span_id: str
+) -> dict:
+    """
+    Remove a span from an annotation.
+    
+    1. Validate user owns the annotation
+    2. Remove span from annotation
+    """
+    annotation = get_annotation(db, annotation_id)
+    if not annotation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Annotation not found"
+        )
+    
+    if annotation.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Annotation does not belong to this project"
+        )
+    
+    if annotation.annotator_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only modify your own annotations"
+        )
+    
+    annotation = remove_span_from_annotation(db, annotation_id, span_id)
+    
+    logger.info(f"Removed span {span_id} from annotation {annotation_id}")
+    return annotation
+
+
+def update_span_in_annotation_service(
+    db: Session,
+    project_id: int,
+    user_id: int,
+    annotation_id: int,
+    span_id: str,
+    span_updates: dict
+) -> dict:
+    """
+    Update a span in an annotation.
+    
+    1. Validate user owns the annotation
+    2. Update span in annotation
+    """
+    annotation = get_annotation(db, annotation_id)
+    if not annotation:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Annotation not found"
+        )
+    
+    if annotation.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Annotation does not belong to this project"
+        )
+    
+    if annotation.annotator_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only modify your own annotations"
+        )
+    
+    annotation = update_span_in_annotation(db, annotation_id, span_id, span_updates)
+    
+    logger.info(f"Updated span {span_id} in annotation {annotation_id}")
+    return annotation
+
+
+def get_annotation_with_spans_service(
+    db: Session,
+    project_id: int,
+    resource_id: int,
+    user_id: Optional[int] = None
+) -> Optional[dict]:
+    """
+    Get annotation for a resource with all spans.
+    
+    If user_id is provided, returns that user's annotation.
+    Otherwise returns the most recent annotation for the resource.
+    """
+    # Validate resource belongs to project
+    resource = get_resource(db, resource_id)
+    if not resource or resource.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found or does not belong to this project"
+        )
+    
+    annotation = get_annotation_with_spans(db, resource_id, user_id)
+    
+    if not annotation:
+        return None
+    
+    return annotation

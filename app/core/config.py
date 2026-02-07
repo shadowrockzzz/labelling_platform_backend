@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # CORS settings
-    BACKEND_CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5174", "http://localhost:5173", "http://localhost:5175"]
+    BACKEND_CORS_ORIGINS: list[str] = ["*"]  # Allow all origins for development; restrict in production
 
     # AWS S3 settings
     AWS_ACCESS_KEY_ID: str = ""
