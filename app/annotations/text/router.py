@@ -275,7 +275,17 @@ def update_annotation_endpoint(
             detail="You can only update your own annotations"
         )
     
-    annotation = update_annotation(db, annotation_id, annotation_data.model_dump(exclude_unset=True))
+    # If annotation is reviewed (approved or rejected), reset to draft when edited
+    update_data = annotation_data.model_dump(exclude_unset=True)
+    if annotation.status in ["approved", "rejected"]:
+        # Reset to draft and clear review fields
+        update_data["status"] = "draft"
+        update_data["reviewer_id"] = None
+        update_data["review_comment"] = None
+        update_data["reviewed_at"] = None
+        # Keep the original created_at and annotator_id
+    
+    annotation = update_annotation(db, annotation_id, update_data)
     return annotation
 
 

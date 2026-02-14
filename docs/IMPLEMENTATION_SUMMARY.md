@@ -236,11 +236,50 @@ curl -X POST http://localhost:8000/api/v1/annotations/text/projects/1/annotation
 - Fixed import error in ReviewPanel (changed from default to named import)
 - All frontend components are fully integrated and tested
 
+## Annotation Editing Fixes ✅
+
+### Overview
+Fixed annotation editing functionality for reviewed annotations (approved/rejected), enabling annotators to fix issues and resubmit work.
+
+### Backend Changes
+**File**: `app/annotations/text/router.py`
+- Modified `update_annotation_endpoint` to automatically reset status to "draft" when editing reviewed annotations
+- Clears review fields (reviewer_id, review_comment, reviewed_at)
+- Preserves original annotation metadata (created_at, annotator_id)
+
+### Frontend Changes
+**Files Modified**:
+- `src/components/text-annotation/TextAnnotationWorkspace.jsx` - Auto-load resource when editing
+- `src/components/text-annotation/TextAnnotationEditor.jsx` - Initialize with existing spans, update vs create logic
+
+### Workflows
+- **Rejected**: Edit → Fix issues → Save → Draft → Resubmit
+- **Approved**: Edit → Make changes → Save → Draft → Resubmit
+- **Draft**: Edit → Make changes → Save (no status change)
+
+### Documentation
+- Created `docs/ANNOTATION_EDITING_FIXES.md` with complete technical details
+- Includes test cases, code examples, and workflow diagrams
+
+### Files Modified
+**Backend**:
+- `app/annotations/text/router.py`
+
+**Frontend**:
+- `src/components/text-annotation/TextAnnotationWorkspace.jsx`
+- `src/components/text-annotation/TextAnnotationEditor.jsx`
+
+### Documentation
+- `docs/ANNOTATION_EDITING_FIXES.md` - Complete implementation guide
+
+---
+
 ## Status: ✅ COMPLETE
 
-Both backend and frontend implementations are **fully complete** and ready for testing:
+All implementations are **fully complete** and ready for testing:
 - ✅ Backend API fully functional
 - ✅ Database schema created
 - ✅ Frontend components implemented
 - ✅ Documentation merged and complete
 - ✅ All bugs fixed
+- ✅ Annotation editing fixes implemented
