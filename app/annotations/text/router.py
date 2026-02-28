@@ -2,8 +2,13 @@
 FastAPI router for text annotation endpoints.
 This router is mounted in main.py at prefix="/api/v1/annotations/text"
 """
+import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Form
 from sqlalchemy.orm import Session
+
+# Configure logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 from app.core.database import get_db
 from app.utils.dependencies import get_current_active_user, require_annotator
@@ -46,6 +51,53 @@ from app.models.project import Project
 from app.models.project_assignment import ProjectAssignment
 
 router = APIRouter(prefix="/projects", tags=["Text Annotations"])
+
+
+# ==================== Annotation Response Helper ====================
+
+def annotation_to_response(annotation) -> dict:
+    """Convert annotation ORM object to response dict with annotator/reviewer names."""
+    logger.debug(f"[annotation_to_response] Processing annotation ID: {annotation.id}")
+    logger.debug(f"[annotation_to_response] annotator_id: {annotation.annotator_id}")
+    logger.debug(f"[annotation_to_response] reviewer_id: {annotation.reviewer_id}")
+    
+    response = {
+        'id': annotation.id,
+        'resource_id': annotation.resource_id,
+        'project_id': annotation.project_id,
+        'annotator_id': annotation.annotator_id,
+        'reviewer_id': annotation.reviewer_id,
+        'annotation_type': annotation.annotation_type,
+        'annotation_sub_type': annotation.annotation_sub_type,
+        'status': annotation.status,
+        'label': annotation.label,
+        'span_start': annotation.span_start,
+        'span_end': annotation.span_end,
+        'annotation_data': annotation.annotation_data,
+        'review_comment': annotation.review_comment,
+        'reviewed_at': annotation.reviewed_at,
+        'created_at': annotation.created_at,
+        'updated_at': annotation.updated_at,
+        'submitted_at': annotation.submitted_at,
+        'annotator_name': None,
+        'reviewer_name': None
+    }
+    
+    # Get annotator name from loaded relationship
+    logger.debug(f"[annotation_to_response] annotation.annotator exists: {annotation.annotator is not None}")
+    if annotation.annotator:
+        logger.debug(f"[annotation_to_response] annotator.full_name: '{annotation.annotator.full_name}'")
+        logger.debug(f"[annotation_to_response] annotator.email: '{annotation.annotator.email}'")
+        response['annotator_name'] = annotation.annotator.full_name or annotation.annotator.email
+        logger.debug(f"[annotation_to_response] Set annotator_name to: '{response['annotator_name']}'")
+    else:
+        logger.warning(f"[annotation_to_response] annotator relationship is None for annotation {annotation.id}")
+    
+    # Get reviewer name if available
+    if annotation.reviewer:
+        response['reviewer_name'] = annotation.reviewer.full_name or annotation.reviewer.email
+    
+    return response
 
 
 def check_project_access(db: Session, project_id: int, user: User) -> Project:
@@ -237,27 +289,40 @@ def create_annotation_endpoint(
     return annotation
 
 
-@router.get("/{project_id}/annotations", response_model=TextAnnotationListResponse)
+@router.get("/{project_id}/annotations")
 def list_annotations_endpoint(
     project_id: int,
     resource_id: int = Query(None),
     status_filter: str = Query(None, alias="status"),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """List annotations for a project with optional filters."""
+    logger.info(f"[list_annotations] Fetching annotations for project {project_id}")
     project = check_project_access(db, project_id, current_user)
     
     annotations, total = list_annotations(
         db, project_id, resource_id, status_filter, page, limit
     )
-    return TextAnnotationListResponse(
-        success=True,
-        data=annotations,
-        total=total
-    )
+    
+    logger.info(f"[list_annotations] Found {len(annotations)} annotations (total: {total})")
+    
+    # Transform annotations to include annotator/reviewer names
+    data = []
+    for ann in annotations:
+        logger.debug(f"[list_annotations] Processing annotation {ann.id}, annotator_id={ann.annotator_id}")
+        response = annotation_to_response(ann)
+        logger.debug(f"[list_annotations] Annotation {ann.id} annotator_name: {response.get('annotator_name')}")
+        data.append(response)
+    
+    logger.info(f"[list_annotations] Returning {len(data)} annotations")
+    return {
+        "success": True,
+        "data": data,
+        "total": total
+    }
 
 
 @router.get("/{project_id}/annotations/{annotation_id}", response_model=TextAnnotationResponse)

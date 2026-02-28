@@ -22,6 +22,45 @@ from app.annotations.image.crud import add_urls_to_resource
 router = APIRouter(prefix="/projects", tags=["Image Annotations"])
 
 
+# ==================== Annotation Response Helper ====================
+
+def annotation_to_response(annotation) -> dict:
+    """Convert annotation ORM object to response dict with annotator/reviewer names."""
+    response = {
+        'id': annotation.id,
+        'resource_id': annotation.resource_id,
+        'project_id': annotation.project_id,
+        'annotator_id': annotation.annotator_id,
+        'reviewer_id': annotation.reviewer_id,
+        'annotation_type': annotation.annotation_type,
+        'annotation_sub_type': annotation.annotation_sub_type,
+        'status': annotation.status,
+        'annotation_data': annotation.annotation_data,
+        'review_comment': annotation.review_comment,
+        'reviewed_at': annotation.reviewed_at,
+        'created_at': annotation.created_at,
+        'modified_at': annotation.modified_at,
+        'submitted_at': annotation.submitted_at,
+        'resource': None,
+        'annotator_name': None,
+        'reviewer_name': None
+    }
+    
+    # Get annotator name from loaded relationship
+    if annotation.annotator:
+        response['annotator_name'] = annotation.annotator.full_name or annotation.annotator.email
+    
+    # Get reviewer name if available
+    if annotation.reviewer:
+        response['reviewer_name'] = annotation.reviewer.full_name or annotation.reviewer.email
+    
+    # Add resource info if available
+    if annotation.resource:
+        response['resource'] = add_urls_to_resource(annotation.resource)
+    
+    return response
+
+
 # ==================== Helper Functions ====================
 
 def check_project_member(db: Session, project_id: int, user: User) -> bool:
@@ -310,9 +349,12 @@ def list_annotations(
         limit=limit
     )
     
+    # Transform annotations to include annotator/reviewer names
+    data = [annotation_to_response(ann) for ann in annotations]
+    
     return schemas.ImageAnnotationListResponse(
         success=True,
-        data=annotations,
+        data=data,
         total=total
     )
 

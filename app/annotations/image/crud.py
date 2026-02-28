@@ -9,7 +9,7 @@ import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from fastapi import HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, desc
 
 from app.annotations.image.models import (
@@ -282,8 +282,11 @@ def get_image_annotations(
 ) -> tuple[List[ImageAnnotation], int]:
     """
     Get paginated list of image annotations with filters.
+    Eager loads annotator relationship for proper serialization.
     """
-    query = db.query(ImageAnnotation).filter(ImageAnnotation.project_id == project_id)
+    query = db.query(ImageAnnotation).options(
+        joinedload(ImageAnnotation.annotator)
+    ).filter(ImageAnnotation.project_id == project_id)
     
     if resource_id:
         query = query.filter(ImageAnnotation.resource_id == resource_id)
@@ -294,7 +297,7 @@ def get_image_annotations(
     if sub_type:
         query = query.filter(ImageAnnotation.annotation_sub_type == sub_type)
     
-    query = query.order_by(desc(ImageAnnotation.created_at))
+    query = query.order_by(desc(ImageAnnotation.modified_at))
     
     total = query.count()
     annotations = query.offset((page - 1) * limit).limit(limit).all()

@@ -1,6 +1,6 @@
 # Labelling Platform - Feature Status
 
-**Last Updated:** February 14, 2026
+**Last Updated:** February 28, 2026
 
 ---
 
@@ -222,11 +222,14 @@ This document provides a comprehensive status of all features in the Labelling P
 | Submit for Review | ✅ | `app/annotations/text/router.py` |
 | Approve Annotation | ✅ | `app/annotations/text/router.py` |
 | Reject Annotation | ✅ | `app/annotations/text/router.py` |
+| Edit Before Approve (Reviewers) | ✅ | `app/annotations/text/router.py` |
+| Resubmit Rejected Annotations | ✅ | `app/annotations/text/router.py` |
 | Create Correction | ✅ | `app/annotations/text/crud.py` |
 | List Corrections | ✅ | `app/annotations/text/crud.py` |
 | Accept Correction | ✅ | `app/annotations/text/crud.py` |
 | Reject Correction | ✅ | `app/annotations/text/crud.py` |
 | Review Corrections Table | ✅ | `app/models/review_correction.py` |
+| Annotator Name in Response | ✅ | `app/annotations/text/router.py` |
 
 ### Frontend ✅ COMPLETE
 | Feature | Status | File |
@@ -235,17 +238,29 @@ This document provides a comprehensive status of all features in the Labelling P
 | Suggest Correction | ✅ | `src/components/text-annotation/ReviewPanel.jsx` |
 | Accept/Reject Corrections | ✅ | `src/components/text-annotation/ReviewPanel.jsx` |
 | Edit Annotation Form | ✅ | `src/components/text-annotation/EditAnnotationForm.jsx` |
+| Rejected Annotations Tab | ✅ | `src/components/text-annotation/RejectedAnnotations.jsx` |
+| All Annotations Dashboard | ✅ | `src/components/text-annotation/AllAnnotationsDashboard.jsx` |
+| Edit Mode for Reviewers | ✅ | `src/features/image-annotation/components/ImageAnnotationWorkspace.jsx` |
+| Fix & Resubmit Workflow | ✅ | `src/features/image-annotation/components/ImageAnnotationWorkspace.jsx` |
 
 ### Annotation Status Flow
 ```
 draft → submitted → approved/rejected
-         ↓
-    under_review
-         ↓
+         ↓              ↓
+    under_review    (reviewer can edit before approve)
+         ↓              ↓
     approved / rejected
          ↓
-    (can edit rejected) → draft → resubmit
+    (annotator can edit rejected) → draft → resubmit
 ```
+
+### Recent Enhancements (Feb 2026)
+| Feature | Description |
+|---------|-------------|
+| **Edit & Approve** | Reviewers can edit annotations before approving |
+| **Fix & Resubmit** | Annotators can fix rejected annotations and resubmit |
+| **Annotator Name Display** | Shows annotator's full_name or email in annotation lists |
+| **Review Comment Display** | Shows reviewer feedback on rejected annotations |
 
 ---
 
@@ -409,4 +424,4 @@ draft → submitted → approved/rejected
 
 ---
 
-*This document is auto-maintained. Last updated: February 14, 2026*
+*This document is auto-maintained. Last updated: February 28, 2026*

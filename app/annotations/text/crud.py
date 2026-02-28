@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional, Tuple, List, Dict, Any
 from pydantic import ValidationError
 import json
@@ -285,7 +285,12 @@ def list_annotations(
     limit: int = 20
 ) -> Tuple[List[TextAnnotation], int]:
     """List annotations for a project with optional filters."""
-    query = db.query(TextAnnotation).filter(TextAnnotation.project_id == project_id)
+    from app.models.user import User
+    
+    query = db.query(TextAnnotation).options(
+        joinedload(TextAnnotation.annotator),
+        joinedload(TextAnnotation.reviewer)
+    ).filter(TextAnnotation.project_id == project_id)
     
     if resource_id is not None:
         query = query.filter(TextAnnotation.resource_id == resource_id)
