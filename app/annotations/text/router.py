@@ -79,6 +79,36 @@ def check_project_access(db: Session, project_id: int, user: User) -> Project:
 
 # ==================== Resource Endpoints ====================
 
+@router.get("/{project_id}/queue/unannotated")
+def get_unannotated_resources_endpoint(
+    project_id: int,
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get text resources that haven't been annotated by the current user.
+    
+    Useful for queue-based annotation workflow where annotators only see
+    resources they need to annotate, not ones they've already worked on.
+    """
+    project = check_project_access(db, project_id, current_user)
+    
+    from app.annotations.text.crud import get_unannotated_resources
+    resources = get_unannotated_resources(
+        db=db,
+        project_id=project_id,
+        user_id=current_user.id,
+        limit=limit
+    )
+    
+    return {
+        "success": True,
+        "data": resources,
+        "total": len(resources)
+    }
+
+
 @router.post("/{project_id}/resources/upload", response_model=ResourceResponse)
 async def upload_resource_endpoint(
     project_id: int,

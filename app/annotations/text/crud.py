@@ -108,6 +108,46 @@ def archive_resource(db: Session, resource_id: int) -> Optional[TextResource]:
     return resource
 
 
+def get_unannotated_resources(
+    db: Session,
+    project_id: int,
+    user_id: int,
+    limit: int = 50
+) -> List[TextResource]:
+    """
+    Get resources that haven't been annotated by the current user.
+    
+    Returns resources where no annotation exists for this user,
+    useful for queue-based annotation workflow.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        user_id: Current user's ID
+        limit: Maximum number of resources to return
+    
+    Returns:
+        List of unannotated resources
+    """
+    # Subquery to get resource_ids that have been annotated by this user
+    from sqlalchemy import and_
+    
+    annotated_resource_ids = db.query(TextAnnotation.resource_id).filter(
+        TextAnnotation.project_id == project_id,
+        TextAnnotation.annotator_id == user_id,
+        TextAnnotation.status.in_(['submitted', 'approved'])  # Only count submitted/approved
+    ).subquery()
+    
+    # Get resources not in the annotated list
+    resources = db.query(TextResource).filter(
+        TextResource.project_id == project_id,
+        TextResource.status == "active",
+        TextResource.id.notin_(db.query(annotated_resource_ids.c.resource_id))
+    ).order_by(TextResource.created_at.asc()).limit(limit).all()
+    
+    return resources
+
+
 def delete_resource(db: Session, resource_id: int) -> bool:
     """Permanently delete a resource."""
     resource = get_resource(db, resource_id)
