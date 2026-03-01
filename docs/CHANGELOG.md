@@ -9,6 +9,12 @@ All notable changes to the Labelling Platform backend will be documented in this
 ### Added
 - Comprehensive documentation restructure
 
+### Changed
+- **Reviewer Edit Permissions**: Reviewers can now directly edit annotations (both text and image)
+  - Previously, only the original annotator could edit their annotations
+  - Reviewers can now update shapes, spans, and full annotations
+  - When a reviewer edits an annotation, the status is reset to draft for re-review workflow
+
 ---
 
 ## [2026.03] - March 2026

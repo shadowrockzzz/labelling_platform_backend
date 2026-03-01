@@ -129,6 +129,20 @@ def check_project_access(db: Session, project_id: int, user: User) -> Project:
     return project
 
 
+def check_reviewer(db: Session, project_id: int, user: User) -> bool:
+    """Check if user can review (reviewer role or admin)."""
+    if user.role == 'admin':
+        return True
+    
+    assignment = db.query(ProjectAssignment).filter(
+        ProjectAssignment.project_id == project_id,
+        ProjectAssignment.user_id == user.id,
+        ProjectAssignment.role == 'reviewer'
+    ).first()
+    
+    return assignment is not None
+
+
 # ==================== Resource Endpoints ====================
 
 @router.get("/{project_id}/queue/unannotated")
@@ -353,7 +367,11 @@ def update_annotation_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_annotator)
 ):
-    """Update an annotation (annotator only)."""
+    """
+    Update an annotation.
+    
+    Allowed by: original annotator, admin, or reviewer.
+    """
     project = check_project_access(db, project_id, current_user)
     
     annotation = get_annotation(db, annotation_id)
@@ -363,11 +381,15 @@ def update_annotation_endpoint(
             detail="Annotation not found"
         )
     
-    # Only the annotator can update their own annotation
-    if annotation.annotator_id != current_user.id:
+    # Check permission: owner, admin, or reviewer
+    is_owner = annotation.annotator_id == current_user.id
+    is_admin = current_user.role == 'admin'
+    is_reviewer = check_reviewer(db, project_id, current_user)
+    
+    if not (is_owner or is_admin or is_reviewer):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You can only update your own annotations"
+            detail="Not authorized to update this annotation"
         )
     
     # If annotation is reviewed (approved or rejected), reset to draft when edited
@@ -525,12 +547,34 @@ def update_span_endpoint(
     """
     Update a specific span within an annotation.
     
-    Allows editing individual spans without affecting others.
+    Allowed by: original annotator, admin, or reviewer.
     """
     project = check_project_access(db, project_id, current_user)
     
+    # Get annotation to check permissions
+    annotation = get_annotation(db, annotation_id)
+    if not annotation or annotation.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Annotation not found"
+        )
+    
+    # Check permission: owner, admin, or reviewer
+    is_owner = annotation.annotator_id == current_user.id
+    is_admin = current_user.role == 'admin'
+    is_reviewer = check_reviewer(db, project_id, current_user)
+    
+    if not (is_owner or is_admin or is_reviewer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this annotation"
+        )
+    
+    # Allow reviewer to edit by passing None as user_id (skips ownership check in service)
+    editor_id = current_user.id if is_owner else None
+    
     annotation = service.update_span_in_annotation_service(
-        db, project_id, current_user.id, annotation_id,
+        db, project_id, editor_id, annotation_id,
         span_id, span_data.model_dump(exclude_unset=True)
     )
     
@@ -554,12 +598,35 @@ def delete_span_endpoint(
     """
     Remove a specific span from an annotation.
     
+    Allowed by: original annotator, admin, or reviewer.
     Deletes only the specified span, leaving other spans intact.
     """
     project = check_project_access(db, project_id, current_user)
     
+    # Get annotation to check permissions
+    annotation = get_annotation(db, annotation_id)
+    if not annotation or annotation.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Annotation not found"
+        )
+    
+    # Check permission: owner, admin, or reviewer
+    is_owner = annotation.annotator_id == current_user.id
+    is_admin = current_user.role == 'admin'
+    is_reviewer = check_reviewer(db, project_id, current_user)
+    
+    if not (is_owner or is_admin or is_reviewer):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to update this annotation"
+        )
+    
+    # Allow reviewer to delete by passing None as user_id (skips ownership check in service)
+    editor_id = current_user.id if is_owner else None
+    
     annotation = service.remove_span_from_annotation_service(
-        db, project_id, current_user.id, annotation_id, span_id
+        db, project_id, editor_id, annotation_id, span_id
     )
     
     return annotation

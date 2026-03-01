@@ -64,10 +64,28 @@ The review workflow provides a complete system for reviewing, approving, rejecti
 
 | Status | Description | Who Can Edit |
 |--------|-------------|--------------|
-| `draft` | Work in progress | Annotator |
+| `draft` | Work in progress | Annotator, Reviewer |
 | `submitted` | Awaiting review | Nobody |
 | `approved` | Accepted by reviewer | Nobody (final) |
-| `rejected` | Rejected with feedback | Annotator |
+| `rejected` | Rejected with feedback | Annotator, Reviewer |
+
+### Reviewer Edit Permissions
+
+Reviewers have direct edit access to annotations in the following scenarios:
+
+| Action | Text Annotations | Image Annotations |
+|--------|-----------------|-------------------|
+| Update full annotation | ✅ | ✅ |
+| Update individual span/shape | ✅ | ✅ |
+| Delete individual span/shape | ✅ | ✅ |
+| Add new span/shape | ✅ (via add span endpoint) | ✅ (via add shape endpoint) |
+
+**Important:** When a reviewer edits an annotation they didn't create:
+- The annotation status is reset to `draft`
+- Review fields (reviewer_id, review_comment, reviewed_at) are cleared
+- The annotation goes through the review workflow again
+
+This ensures proper workflow tracking while allowing reviewers to make direct corrections when needed.
 
 ---
 

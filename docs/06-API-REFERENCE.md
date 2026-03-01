@@ -334,6 +334,13 @@ GET /annotations/text/projects/{project_id}/annotations/{annotation_id}
 PUT /annotations/text/projects/{project_id}/annotations/{annotation_id}
 ```
 
+**Permissions:**
+- Original annotator
+- Admin
+- Reviewer (assigned to project)
+
+**Note:** When a reviewer updates an annotation they didn't create, the status is reset to `draft` and review fields are cleared.
+
 #### Delete Annotation
 ```http
 DELETE /annotations/text/projects/{project_id}/annotations/{annotation_id}
@@ -450,6 +457,81 @@ POST /annotations/image/projects/{project_id}/annotations
 
 #### List/Get/Update/Delete
 Same pattern as text annotations.
+
+### Shape Operations
+
+#### Add Shape
+```http
+POST /annotations/image/projects/{project_id}/resources/{resource_id}/shapes?annotation_sub_type=bounding_box
+```
+
+**Request Body:**
+```json
+{
+  "shape_data": {
+    "type": "bounding_box",
+    "label": "person",
+    "coordinates": {"x": 100, "y": 150, "width": 200, "height": 300}
+  }
+}
+```
+
+#### Update Shape
+```http
+PUT /annotations/image/projects/{project_id}/annotations/{annotation_id}/shapes/{shape_id}
+```
+
+**Permissions:**
+- Original annotator
+- Admin
+- Reviewer (assigned to project)
+
+#### Delete Shape
+```http
+DELETE /annotations/image/projects/{project_id}/annotations/{annotation_id}/shapes/{shape_id}
+```
+
+**Permissions:**
+- Original annotator
+- Admin
+- Reviewer (assigned to project)
+
+### Span Operations (Text)
+
+#### Add Span
+```http
+POST /annotations/text/projects/{project_id}/resources/{resource_id}/spans?annotation_sub_type=ner
+```
+
+**Request Body:**
+```json
+{
+  "text": "John Doe",
+  "label": "PERSON",
+  "start": 0,
+  "end": 8
+}
+```
+
+#### Update Span
+```http
+PUT /annotations/text/projects/{project_id}/annotations/{annotation_id}/spans/{span_id}
+```
+
+**Permissions:**
+- Original annotator
+- Admin
+- Reviewer (assigned to project)
+
+#### Delete Span
+```http
+DELETE /annotations/text/projects/{project_id}/annotations/{annotation_id}/spans/{span_id}
+```
+
+**Permissions:**
+- Original annotator
+- Admin
+- Reviewer (assigned to project)
 
 ---
 

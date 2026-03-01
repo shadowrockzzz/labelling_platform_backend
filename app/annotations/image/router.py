@@ -17,6 +17,7 @@ from app.api.deps import get_current_user, get_current_active_user
 from app.models.user import User
 from app.annotations.image import crud, schemas, storage
 from app.annotations.image.crud import add_urls_to_resource
+from app.annotations.base import QueueTracker
 
 
 router = APIRouter(prefix="/projects", tags=["Image Annotations"])
@@ -314,6 +315,15 @@ def create_annotation(
         annotation_data=annotation_data.annotation_data
     )
     
+    # Track in queue
+    tracker = QueueTracker(db, annotation_type="image")
+    tracker.track_created(
+        project_id=project_id,
+        annotation_id=annotation.id,
+        resource_id=annotation_data.resource_id,
+        sub_type=annotation_data.annotation_sub_type.value
+    )
+    
     return annotation
 
 
@@ -401,7 +411,8 @@ def update_annotation(
     """
     Update an annotation.
     
-    Only the original annotator can update, and only if status is draft or rejected.
+    Allowed by: original annotator, admin, or reviewer.
+    Only updates if status is draft or rejected.
     """
     annotation = crud.get_image_annotation(db, annotation_id)
     if not annotation or annotation.project_id != project_id:
@@ -410,8 +421,12 @@ def update_annotation(
             detail="Annotation not found"
         )
     
-    # Check ownership
-    if annotation.annotator_id != current_user.id and current_user.role != 'admin':
+    # Check permission: owner, admin, or reviewer
+    is_owner = annotation.annotator_id == current_user.id
+    is_admin = current_user.role == 'admin'
+    is_reviewer = check_reviewer(db, project_id, current_user)
+    
+    if not (is_owner or is_admin or is_reviewer):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this annotation"
@@ -463,7 +478,7 @@ def delete_annotation(
     return schemas.SuccessResponse(success=True, message="Annotation deleted successfully")
 
 
-@router.post("/{project_id}/annotations/{annotation_id}/submit", response_model=schemas.ImageAnnotationResponse)
+@router.post("/{project_id}/annotations/{annotation_id}/submit")
 def submit_annotation_for_review(
     project_id: int,
     annotation_id: int,
@@ -490,7 +505,17 @@ def submit_annotation_for_review(
         )
     
     annotation = crud.submit_annotation(db, annotation_id)
-    return annotation
+    
+    # Track in queue (non-blocking - errors logged but don't fail request)
+    tracker = QueueTracker(db, annotation_type="image")
+    tracker.track_submitted(
+        project_id=project_id,
+        annotation_id=annotation.id,
+        resource_id=annotation.resource_id
+    )
+    
+    # Return with annotator name using helper
+    return annotation_to_response(annotation)
 
 
 @router.post("/{project_id}/annotations/{annotation_id}/review", response_model=schemas.ImageAnnotationResponse)
@@ -606,6 +631,8 @@ def update_shape(
 ):
     """
     Update a specific shape in annotation.
+    
+    Allowed by: original annotator, admin, or reviewer.
     """
     annotation = crud.get_image_annotation(db, annotation_id)
     if not annotation or annotation.project_id != project_id:
@@ -614,7 +641,12 @@ def update_shape(
             detail="Annotation not found"
         )
     
-    if annotation.annotator_id != current_user.id and current_user.role != 'admin':
+    # Check permission: owner, admin, or reviewer
+    is_owner = annotation.annotator_id == current_user.id
+    is_admin = current_user.role == 'admin'
+    is_reviewer = check_reviewer(db, project_id, current_user)
+    
+    if not (is_owner or is_admin or is_reviewer):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this annotation"
@@ -640,6 +672,8 @@ def delete_shape(
 ):
     """
     Delete a specific shape from annotation.
+    
+    Allowed by: original annotator, admin, or reviewer.
     """
     annotation = crud.get_image_annotation(db, annotation_id)
     if not annotation or annotation.project_id != project_id:
@@ -648,7 +682,12 @@ def delete_shape(
             detail="Annotation not found"
         )
     
-    if annotation.annotator_id != current_user.id and current_user.role != 'admin':
+    # Check permission: owner, admin, or reviewer
+    is_owner = annotation.annotator_id == current_user.id
+    is_admin = current_user.role == 'admin'
+    is_reviewer = check_reviewer(db, project_id, current_user)
+    
+    if not (is_owner or is_admin or is_reviewer):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to update this annotation"
