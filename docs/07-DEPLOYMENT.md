@@ -53,6 +53,8 @@ docker-compose down
 | `postgres` | 5432 | PostgreSQL database |
 | `minio` | 9000 | S3-compatible storage |
 | `minio-console` | 9001 | MinIO web console |
+| `redis` | 6379 | Redis for job queue |
+| `rq-worker` | - | Background job worker |
 
 ### Docker Compose Configuration
 
@@ -349,12 +351,117 @@ AWS_REGION=us-east-1
 AWS_S3_BUCKET=labelling-platform-files
 AWS_S3_ENDPOINT=http://localhost:9000
 
+# Redis (for background job queue)
+REDIS_URL=redis://localhost:6379
+
 # CORS
 BACKEND_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
 
 # Optional
 DEBUG=true
 LOG_LEVEL=info
+```
+
+---
+
+## Redis Queue Setup
+
+### Redis (Background Job Queue)
+
+The platform uses Redis with `rq` (Redis Queue) for background task processing.
+
+#### Start Redis (Docker)
+
+```bash
+# Start Redis container
+docker-compose up -d redis
+
+# Verify Redis is running
+docker-compose ps redis
+
+# Test Redis connection
+redis-cli ping
+# Response: PONG
+```
+
+#### Start rq Worker
+
+```bash
+# Start worker manually
+python run_worker.py
+
+# Or via Docker
+docker-compose up -d rq-worker
+
+# Check worker logs
+docker-compose logs -f rq-worker
+```
+
+#### Redis CLI Commands
+
+```bash
+# Connect to Redis CLI
+redis-cli
+
+# View all keys
+127.0.0.1:6379> KEYS *
+
+# View queue length
+127.0.0.1:6379> LLEN rq:queue:default
+
+# View job info
+127.0.0.1:6379> HGETALL rq:job:<job_id>
+```
+
+### Production Redis Setup
+
+For production, use a managed Redis service or self-hosted Redis:
+
+#### AWS ElastiCache
+
+```env
+REDIS_URL=redis://your-elasticache-endpoint:6379
+```
+
+#### Self-hosted Redis
+
+```bash
+# Install Redis
+sudo apt install redis-server
+
+# Configure Redis
+sudo nano /etc/redis/redis.conf
+
+# Start Redis
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+```
+
+#### Systemd Service for rq Worker
+
+Create `/etc/systemd/system/labelling-platform-worker.service`:
+
+```ini
+[Unit]
+Description=Labelling Platform RQ Worker
+After=network.target redis.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/labelling_platform_backend
+Environment="PATH=/var/www/labelling_platform_backend/venv/bin"
+ExecStart=/var/www/labelling_platform_backend/venv/bin/python run_worker.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start
+sudo systemctl enable labelling-platform-worker
+sudo systemctl start labelling-platform-worker
 ```
 
 ---

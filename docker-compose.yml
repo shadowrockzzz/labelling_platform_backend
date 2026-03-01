@@ -1,6 +1,45 @@
 version: '3.8'
 
 services:
+  # Redis - For rq job queue
+  redis:
+    image: redis:7-alpine
+    container_name: labelling_platform_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # rq worker - Processes annotation queue jobs
+  rq-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: labelling_platform_rq_worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_SERVER=${POSTGRES_SERVER:-host.docker.internal}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-password}
+      - POSTGRES_DB=${POSTGRES_DB:-postgres}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-labelling_platform}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-labelling_platform_secret_key}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-labelling-platform}
+      - AWS_S3_ENDPOINT=${AWS_S3_ENDPOINT:-http://minio:9000}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+    command: python run_worker.py
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # MinIO - S3-compatible object storage
   minio:
     image: minio/minio:latest
@@ -22,5 +61,7 @@ services:
       retries: 3
 
 volumes:
+  redis_data:
+    driver: local
   minio_data:
     driver: local

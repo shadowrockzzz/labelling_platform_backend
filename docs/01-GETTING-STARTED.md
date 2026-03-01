@@ -25,6 +25,7 @@ Before starting, ensure you have the following installed:
 |-------------|---------|---------|
 | Python | 3.10+ | Runtime environment |
 | PostgreSQL | 13+ | Primary database |
+| Redis | 7+ | Job queue (optional, for background tasks) |
 | Docker | 20+ | Container runtime (optional) |
 | Docker Compose | 2+ | Multi-container setup (optional) |
 
@@ -112,6 +113,9 @@ AWS_S3_ENDPOINT=http://localhost:9000
 # CORS
 BACKEND_CORS_ORIGINS=["http://localhost:5173","http://localhost:3000"]
 
+# Redis (for background job queue)
+REDIS_URL=redis://localhost:6379
+
 # Optional: Email Settings
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
@@ -128,6 +132,7 @@ SMTP_PASSWORD=your-password
 | `AWS_S3_BUCKET` | Yes | - | S3 bucket name for file storage |
 | `AWS_S3_ENDPOINT` | No | AWS S3 | Custom S3 endpoint (MinIO) |
 | `BACKEND_CORS_ORIGINS` | Yes | `[]` | List of allowed CORS origins |
+| `REDIS_URL` | No | `redis://localhost:6379` | Redis connection URL for job queue |
 
 ---
 

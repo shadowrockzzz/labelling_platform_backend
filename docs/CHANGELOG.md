@@ -11,6 +11,37 @@ All notable changes to the Labelling Platform backend will be documented in this
 
 ---
 
+## [2026.03] - March 2026
+
+### Added
+
+#### Redis Queue System
+- **Redis-backed job queue** using `rq` (Redis Queue)
+- **Unified AnnotationQueue class** supporting all annotation types (text, image)
+- **PostgreSQL audit logging** for all queue operations
+- **Docker Compose integration** for Redis and rq-worker services
+- **Management commands** for running background workers
+
+#### New Files
+- `app/core/redis_client.py` - Generic Redis connection manager
+- `app/core/queue.py` - Unified `AnnotationQueue` class
+- `app/workers/annotation_tasks.py` - rq job functions
+- `run_worker.py` - Script to start rq workers
+
+#### Configuration
+- Added `REDIS_URL` environment variable
+- Added `rq` and `redis` to requirements.txt
+- Added `rq_job_id` column to queue tables
+
+#### Docker Services
+- `redis` - Redis server container
+- `rq-worker` - Background worker container
+
+### Migration
+- `migration_add_rq_job_id.py` - Adds `rq_job_id` column to text_annotation_queue
+
+---
+
 ## [2026.02] - February 2026
 
 ### Bug Fixes
@@ -144,6 +175,7 @@ All notable changes to the Labelling Platform backend will be documented in this
 | `migration_add_annotation_sub_type.py` | Added annotation_sub_type |
 | `migration_add_image_annotation.py` | Image annotation tables |
 | `migration_add_review_corrections.py` | Review corrections table |
+| `migration_add_rq_job_id.py` | Added rq_job_id for Redis queue |
 
 ---
 
@@ -151,6 +183,7 @@ All notable changes to the Labelling Platform backend will be documented in this
 
 | Version | Date | Description |
 |---------|------|-------------|
+| 2026.03 | Mar 2026 | Redis queue system |
 | 2026.02 | Feb 2026 | Bug fixes and stability |
 | 2026.01 | Jan 2026 | Major features (review, image) |
 | 2025.12 | Dec 2025 | Initial release |

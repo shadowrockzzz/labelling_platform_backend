@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: str = ""
     AWS_S3_ENDPOINT: str = ""  # For S3-compatible services (e.g., MinIO)
 
+    # Redis settings for rq queue
+    REDIS_URL: str = "redis://localhost:6379"
+    RQ_DASHBOARD_USERNAME: str = "admin"
+    RQ_DASHBOARD_PASSWORD: str = "changeme"
+
     class Config:
         env_file = str(Path(__file__).parent.parent.parent / ".env")
 

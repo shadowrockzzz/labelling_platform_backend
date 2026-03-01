@@ -73,7 +73,12 @@ class TextAnnotation(Base):
 
 
 class TextAnnotationQueue(Base):
-    """Queue table for annotation tasks. Supports multiple projects and annotation types."""
+    """Queue table for annotation tasks. Supports multiple projects and annotation types.
+    
+    Now serves as an audit log for the Redis-backed queue system.
+    Real-time queue operations use Redis/rq, while this table provides
+    persistent history and compliance tracking.
+    """
     __tablename__ = "text_annotation_queue"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -81,9 +86,10 @@ class TextAnnotationQueue(Base):
     annotation_type = Column(String(50), nullable=False, default="text", index=True)  # 'text', 'image', 'video', etc.
     resource_id = Column(Integer, ForeignKey("text_resources.id"), nullable=True)
     annotation_id = Column(Integer, ForeignKey("text_annotations.id"), nullable=True)
-    task_type = Column(String(50), nullable=False)  # 'create', 'review', 'output'
+    task_type = Column(String(50), nullable=False)  # 'resource_uploaded', 'annotation_created', 'annotation_submitted', 'annotation_approved', 'annotation_rejected', 'output'
     status = Column(String(20), default="pending")  # 'pending','processing','done','failed'
     payload = Column(JSON, nullable=False)
+    rq_job_id = Column(String(255), nullable=True, index=True)  # Redis Queue job ID for tracking
     created_at = Column(DateTime(timezone=True), server_default="now()")
     processed_at = Column(DateTime(timezone=True), nullable=True)
     error_message = Column(Text, nullable=True)

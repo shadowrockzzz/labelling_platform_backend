@@ -445,9 +445,64 @@ AWS_S3_ENDPOINT=https://s3.amazonaws.com
 
 ## Queue System
 
-### Queue Architecture
+### Redis-Backed Queue Architecture
 
-The platform uses a queue system for asynchronous task processing:
+The platform uses a **Redis-backed queue** using `rq` (Redis Queue) for asynchronous task processing with PostgreSQL audit logging:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     FastAPI Backend                          │
+│  ┌─────────────────────────────────────────────────────────┐│
+│  │              AnnotationQueue Class                       ││
+│  │   - Enqueue tasks to Redis                               ││
+│  │   - Track job status                                     ││
+│  │   - Log to PostgreSQL                                    ││
+│  └────────────────────────┬────────────────────────────────┘│
+└───────────────────────────┼─────────────────────────────────┘
+                            │
+          ┌─────────────────┼─────────────────┐
+          ▼                 ▼                 ▼
+┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+│     Redis        │ │   rq-worker      │ │   PostgreSQL     │
+│   Job Queue      │ │   (Background)   │ │   Audit Log      │
+│                  │ │                  │ │                  │
+│ rq:queue:default │ │ Processes jobs   │ │ text_annotation_ │
+│ rq:job:<id>      │ │ from Redis       │ │ queue table      │
+└──────────────────┘ └──────────────────┘ └──────────────────┘
+```
+
+### Queue Components
+
+| Component | File | Description |
+|-----------|------|-------------|
+| **Redis Client** | `app/core/redis_client.py` | Generic Redis connection manager |
+| **Queue Class** | `app/core/queue.py` | Unified `AnnotationQueue` class |
+| **Worker Tasks** | `app/workers/annotation_tasks.py` | rq job functions |
+| **Worker Script** | `run_worker.py` | Script to start rq workers |
+
+### AnnotationQueue Class
+
+```python
+from app.core.queue import AnnotationQueue
+
+# Create queue for text annotations
+queue = AnnotationQueue(db_session, annotation_type="text")
+
+# Enqueue a task
+job = queue.enqueue(
+    project_id=1,
+    task_type="resource_uploaded",
+    payload={"resource_id": 123, "filename": "document.txt"}
+)
+
+# Check job status
+status = queue.get_job_status(job.id)
+
+# Get all tasks for a project
+tasks = queue.get_all_tasks(project_id=1)
+```
+
+### Database Queue Table (PostgreSQL Audit)
 
 ```python
 class TextAnnotationQueue(Base):
@@ -461,6 +516,7 @@ class TextAnnotationQueue(Base):
     task_type = Column(String)  # resource_uploaded, annotation_submitted, etc.
     status = Column(String)  # pending, processing, done, failed
     payload = Column(JSON)
+    rq_job_id = Column(String)  # Redis Queue job ID
     created_at = Column(DateTime)
     processed_at = Column(DateTime)
     error_message = Column(Text)
@@ -483,6 +539,29 @@ Queues are isolated by `(project_id, annotation_type)`:
 Project 1 (text):   Queue where project_id=1 AND annotation_type='text'
 Project 1 (image):  Queue where project_id=1 AND annotation_type='image'
 Project 2 (text):   Queue where project_id=2 AND annotation_type='text'
+```
+
+### Running the Worker
+
+```bash
+# Start Redis (via Docker)
+docker-compose up -d redis
+
+# Start worker manually
+python run_worker.py
+
+# Or start via Docker
+docker-compose up -d rq-worker
+
+# Check worker status
+docker-compose logs rq-worker
+```
+
+### Configuration
+
+```env
+# Redis connection URL
+REDIS_URL=redis://localhost:6379
 ```
 
 ---

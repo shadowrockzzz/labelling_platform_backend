@@ -855,12 +855,14 @@ def accept_correction(
 @router.get("/{project_id}/queue", response_model=schemas.QueueListResponse)
 def get_queue(
     project_id: int,
-    task_type: Optional[str] = None,
+    pending_only: bool = Query(False, description="Only show pending/processing tasks"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Get queue tasks for a project.
+    Get queue tasks for a project's image annotation queue.
+    
+    Uses Redis-backed AnnotationQueue with PostgreSQL audit logging.
     """
     if not check_project_member(db, project_id, current_user):
         raise HTTPException(
@@ -868,12 +870,21 @@ def get_queue(
             detail="Not authorized to view this project"
         )
     
-    tasks = crud.get_queue_tasks(
-        db=db,
-        project_id=project_id,
-        user_id=current_user.id if current_user.role != 'admin' else None,
-        task_type=task_type
-    )
+    # Only manager or admin can view full queue
+    if current_user.role not in ["admin", "project_manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only project managers and admins can view queue"
+        )
+    
+    from app.core.queue import AnnotationQueue
+    
+    queue = AnnotationQueue(db, annotation_type="image")
+    
+    if pending_only:
+        tasks = queue.get_pending_tasks(project_id)
+    else:
+        tasks = queue.get_all_tasks(project_id)
     
     return schemas.QueueListResponse(
         success=True,

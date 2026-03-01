@@ -421,6 +421,7 @@ def review_annotation_endpoint(
 @router.get("/{project_id}/queue", response_model=QueueListResponse)
 def get_queue_tasks_endpoint(
     project_id: int,
+    pending_only: bool = Query(False, description="Only show pending/processing tasks"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_annotator)
 ):
@@ -428,6 +429,8 @@ def get_queue_tasks_endpoint(
     Get queue tasks for a project's text annotation queue.
     Each project has separate queues for each annotation type.
     Only admin/PM can view queue.
+    
+    Uses Redis-backed AnnotationQueue with PostgreSQL audit logging.
     """
     project = check_project_access(db, project_id, current_user)
     
@@ -438,9 +441,14 @@ def get_queue_tasks_endpoint(
             detail="Only project managers and admins can view queue"
         )
     
-    from app.annotations.text.crud import get_queue_tasks
-    # Get tasks for this project's text annotation queue
-    tasks = get_queue_tasks(db, project_id, annotation_type="text")
+    from app.core.queue import AnnotationQueue
+    
+    queue = AnnotationQueue(db, annotation_type="text")
+    
+    if pending_only:
+        tasks = queue.get_pending_tasks(project_id)
+    else:
+        tasks = queue.get_all_tasks(project_id)
     
     return QueueListResponse(
         success=True,
