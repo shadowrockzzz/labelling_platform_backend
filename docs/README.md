@@ -1,79 +1,120 @@
-# Backend Documentation
+# Labelling Platform - Backend Documentation
 
-This directory contains documentation specific to the backend setup and infrastructure.
+**Last Updated:** March 1, 2026
 
-## Files
+---
 
-### QUICK_START.md
-Quick 3-step guide to get MinIO (S3-compatible storage) up and running. Essential for text annotation features.
+## Welcome
 
-### S3_SETUP_GUIDE.md
-Comprehensive guide for MinIO/S3 setup, including:
-- Detailed installation steps
-- Configuration options
-- Troubleshooting
-- Migration to AWS S3 for production
-- Security best practices
+Welcome to the Labelling Platform backend documentation. This documentation provides comprehensive information about the backend architecture, API endpoints, annotation systems, and deployment guides.
 
-## When to Use These Guides
+## Quick Links
 
-- **First-time setup:** Start with QUICK_START.md
-- **Development:** Keep both guides handy for reference
-- **Production:** Use S3_SETUP_GUIDE.md for AWS S3 migration
-- **Troubleshooting:** Both guides have troubleshooting sections
+| Document | Description |
+|----------|-------------|
+| [01-GETTING-STARTED.md](01-GETTING-STARTED.md) | Installation, setup, and quick start guide |
+| [02-ARCHITECTURE.md](02-ARCHITECTURE.md) | System architecture and data models |
+| [03-TEXT-ANNOTATION.md](03-TEXT-ANNOTATION.md) | Text annotation system documentation |
+| [04-IMAGE-ANNOTATION.md](04-IMAGE-ANNOTATION.md) | Image annotation system documentation |
+| [05-REVIEW-WORKFLOW.md](05-REVIEW-WORKFLOW.md) | Review, corrections, and editing workflows |
+| [06-API-REFERENCE.md](06-API-REFERENCE.md) | Complete API endpoint reference |
+| [07-DEPLOYMENT.md](07-DEPLOYMENT.md) | S3, Docker, and production deployment |
+| [CHANGELOG.md](CHANGELOG.md) | Version history and bug fixes |
 
-## Quick Reference
+## Reading Order for New Developers
 
-**Start MinIO:**
+1. **Start Here:** [01-GETTING-STARTED.md](01-GETTING-STARTED.md)
+2. **Understand the System:** [02-ARCHITECTURE.md](02-ARCHITECTURE.md)
+3. **Learn Annotation Types:** [03-TEXT-ANNOTATION.md](03-TEXT-ANNOTATION.md) and [04-IMAGE-ANNOTATION.md](04-IMAGE-ANNOTATION.md)
+4. **Review Workflows:** [05-REVIEW-WORKFLOW.md](05-REVIEW-WORKFLOW.md)
+5. **API Reference:** [06-API-REFERENCE.md](06-API-REFERENCE.md)
+6. **Deploy:** [07-DEPLOYMENT.md](07-DEPLOYMENT.md)
+
+## Project Overview
+
+The Labelling Platform is a full-stack annotation platform supporting:
+
+- **Text Annotation** - NER, POS, Sentiment, Classification, and more
+- **Image Annotation** - Bounding boxes, Polygons, Keypoints, Segmentation
+- **Review Workflow** - Approve/Reject with correction suggestions
+- **Role-Based Access** - Admin, Project Manager, Reviewer, Annotator
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Framework | FastAPI |
+| Database | PostgreSQL |
+| ORM | SQLAlchemy |
+| Storage | S3/MinIO |
+| Authentication | JWT |
+| Migration | Alembic |
+
+## Quick Start
+
 ```bash
+# Navigate to backend directory
 cd labelling_platform_backend
-docker-compose up -d
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your configuration
+
+# Run migrations
+python migration.py
+
+# Start the server
+uvicorn app.main:app --reload
 ```
 
-**Stop MinIO:**
-```bash
-docker-compose down
+## API Documentation
+
+Once the server is running, access the interactive API documentation:
+
+- **Swagger UI:** http://localhost:8000/docs
+- **ReDoc:** http://localhost:8000/redoc
+
+## Project Structure
+
+```
+labelling_platform_backend/
+├── app/
+│   ├── api/v1/           # API endpoints
+│   ├── annotations/      # Annotation modules (text, image)
+│   ├── core/            # Core configuration, database
+│   ├── crud/            # Database operations
+│   ├── models/          # SQLAlchemy models
+│   ├── schemas/         # Pydantic schemas
+│   ├── services/        # Business logic
+│   └── utils/           # Utilities
+├── docs/                # Documentation (you are here)
+├── migrations/          # Alembic migrations
+└── tests/               # Test files
 ```
 
-**Check Logs:**
-```bash
-docker-compose logs minio
-```
+## Contributing
 
-**Access MinIO Console:**
-http://localhost:9001
-- Username: `labelling_platform`
-- Password: `labelling_platform_secret_key`
+When adding new features:
 
-## Important Notes
+1. Update the relevant documentation file
+2. Add entries to CHANGELOG.md
+3. Follow the existing code style
+4. Write tests for new functionality
 
-- MinIO must be running for text annotation file uploads to work
-- Files are stored in the `labelling-platform-files` bucket
-- MinIO provides S3-compatible API - works with AWS S3 too
-- For production, switch to AWS S3 by changing .env variables (no code changes needed!)
-- If bucket doesn't auto-create, create manually via MinIO Console (see S3_SETUP_GUIDE.md)
+## Support
 
-## Recent Fixes & Improvements
+For issues and questions:
+- Check the relevant documentation section
+- Review the CHANGELOG.md for known issues
+- Open an issue on the repository
 
-### S3/MinIO Configuration (February 2, 2026)
+---
 
-Fixed critical issues with S3 storage setup:
-
-1. **Fixed .env file path** - Backend now correctly loads S3 configuration
-2. **Added missing TOKEN_PROVIDER field** - Configuration validation passes
-3. **Manual bucket creation guide** - Steps to create bucket if auto-creation fails
-
-**Impact:**
-- ✅ Text content now displays properly in annotation editor
-- ✅ File uploads work correctly
-- ✅ File downloads work correctly
-- ✅ No more S3 connection errors
-
-For detailed information about all recent fixes, see:
-- **BUG_FIX_LOG.md** - Complete bug fix log with all improvements
-
-## Need More Help?
-
-- Backend README: `../README.md`
-- Main project setup: `SETUP_GUIDE.md`
-- API documentation: `http://localhost:8000/docs`
+*Documentation reorganized and consolidated on March 1, 2026*
