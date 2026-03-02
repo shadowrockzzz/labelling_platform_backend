@@ -29,7 +29,7 @@ class TextQueueStub:
         self.db = db_session
         self.annotation_type = annotation_type
     
-    def enqueue(self, project_id: int, resource_id: int, task_type: str, payload: dict, annotation_id: int = None) -> dict:
+    def enqueue(self, project_id: int, resource_id: int, task_type: str, payload: dict, annotation_id: int = None, review_level: int = None, reviewer_id: int = None) -> dict:
         """
         Saves task to text_annotation_queue table with annotation_type.
         
@@ -42,6 +42,8 @@ class TextQueueStub:
             task_type: Type of task (e.g., 'resource_uploaded', 'annotation_submitted')
             payload: Task data dictionary
             annotation_id: Annotation identifier (optional)
+            review_level: Current review level for multi-level review (optional)
+            reviewer_id: Reviewer user ID for multi-level review (optional)
             
         Returns:
             Dict with task id, status, and annotation_type
@@ -55,7 +57,9 @@ class TextQueueStub:
             task_type=task_type,
             payload=payload,
             annotation_type=self.annotation_type,
-            annotation_id=annotation_id
+            annotation_id=annotation_id,
+            review_level=review_level,
+            reviewer_id=reviewer_id
         )
         
         return {

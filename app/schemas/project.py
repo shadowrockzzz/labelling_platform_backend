@@ -22,6 +22,11 @@ class LabelConfig(BaseModel):
             raise ValueError('Label name cannot be empty')
         return v.strip().upper()
 
+class ReviewerChainItem(BaseModel):
+    """A single reviewer in the chain with their level."""
+    user_id: int
+    review_level: int
+
 class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
@@ -29,6 +34,7 @@ class ProjectBase(BaseModel):
 class ProjectCreate(ProjectBase):
     annotation_type: Optional[str] = None
     config: Optional[dict[str, Any]] = None
+    reviewer_chain: Optional[List[ReviewerChainItem]] = None
     
     @validator('config')
     def validate_config(cls, v):

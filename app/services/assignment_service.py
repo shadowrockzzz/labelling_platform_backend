@@ -7,7 +7,8 @@ from app.crud.assignment import (
     create_assignment,
     delete_assignment,
     get_assignment,
-    get_project_counts
+    get_project_counts,
+    get_reviewer_levels
 )
 from app.schemas.assignment import AssignmentWithUser, TeamMemberResponse, ProjectTeamResponse
 from app.models.user import User
@@ -34,6 +35,10 @@ def get_project_team(db: Session, project_id: int) -> ProjectTeamResponse:
                 'role': owner.role
             }
     
+    # Get reviewer levels for multi-level review support
+    reviewer_levels_data = get_reviewer_levels(db, project_id)
+    reviewer_level_map = {r['user_id']: r['review_level'] for r in reviewer_levels_data}
+    
     # Separate members by role
     reviewers = []
     annotators = []
@@ -48,9 +53,14 @@ def get_project_team(db: Session, project_id: int) -> ProjectTeamResponse:
         }
         
         if row.role == 'reviewer':
+            # Add review level to reviewer data
+            member['review_level'] = reviewer_level_map.get(row.user_id, 1)
             reviewers.append(member)
         elif row.role == 'annotator':
             annotators.append(member)
+    
+    # Sort reviewers by their level
+    reviewers.sort(key=lambda x: x.get('review_level', 1))
     
     return ProjectTeamResponse(
         success=True,

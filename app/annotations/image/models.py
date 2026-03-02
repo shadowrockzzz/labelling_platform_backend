@@ -56,23 +56,30 @@ class ImageResource(Base):
     # Status
     is_archived = Column(Boolean, default=False)
     
+    # Resource pool fields
+    pool_status = Column(String(20), default="available")  # 'available', 'locked', 'completed', 'skipped'
+    locked_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default="now()")
     modified_at = Column(DateTime(timezone=True), onupdate="now()")
 
     # Relationships
     project = relationship("Project", backref="image_resources")
-    uploader = relationship("User", backref="uploaded_image_resources")
+    uploader = relationship("User", foreign_keys=[uploader_id], backref="uploaded_image_resources")
+    locked_by = relationship("User", foreign_keys=[locked_by_user_id], backref="locked_image_resources")
     annotations = relationship("ImageAnnotation", back_populates="resource", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_image_resources_project", "project_id"),
         Index("idx_image_resources_uploader", "uploader_id"),
         Index("idx_image_resources_archived", "is_archived"),
+        Index("idx_image_resources_pool_status", "pool_status"),
     )
 
     def __repr__(self):
-        return f"<ImageResource(id={self.id}, name='{self.name}', dimensions={self.width}x{self.height})>"
+        return f"<ImageResource(id={self.id}, name='{self.name}', dimensions={self.width}x{self.height}, pool_status='{self.pool_status}')>"
 
 
 class ImageAnnotation(Base):
@@ -102,7 +109,10 @@ class ImageAnnotation(Base):
     
     # Status
     status = Column(String(30), nullable=False, default="draft")  
-    # Options: 'draft', 'submitted', 'approved', 'rejected'
+    # Options: 'draft', 'submitted', 'in_review', 'approved', 'rejected', 'pending_correction'
+    
+    # Multi-level review
+    current_review_level = Column(Integer, default=0)  # 0=with annotator, 1=with level-1 reviewer, 2=with level-2, etc.
     
     # Annotation data - flexible JSON structure based on sub_type
     annotation_data = Column(JSON, nullable=True)
@@ -110,6 +120,10 @@ class ImageAnnotation(Base):
     # Review info
     review_comment = Column(Text, nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Review locking for pool mode
+    review_locked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    review_locked_at = Column(DateTime(timezone=True), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default="now()")
@@ -120,6 +134,7 @@ class ImageAnnotation(Base):
     resource = relationship("ImageResource", back_populates="annotations")
     annotator = relationship("User", foreign_keys=[annotator_id], backref="image_annotations_created")
     reviewer = relationship("User", foreign_keys=[reviewer_id], backref="image_annotations_reviewed")
+    review_lock_user = relationship("User", foreign_keys=[review_locked_by], backref="review_locked_image_annotations")
     corrections = relationship("ImageReviewCorrection", back_populates="annotation", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -128,10 +143,11 @@ class ImageAnnotation(Base):
         Index("idx_image_annotations_annotator", "annotator_id"),
         Index("idx_image_annotations_status", "status"),
         Index("idx_image_annotations_sub_type", "annotation_sub_type"),
+        Index("idx_image_annotations_review_level", "current_review_level"),
     )
 
     def __repr__(self):
-        return f"<ImageAnnotation(id={self.id}, resource_id={self.resource_id}, sub_type='{self.annotation_sub_type}', status='{self.status}')>"
+        return f"<ImageAnnotation(id={self.id}, resource_id={self.resource_id}, sub_type='{self.annotation_sub_type}', status='{self.status}', review_level={self.current_review_level})>"
 
 
 class ImageReviewCorrection(Base):
@@ -152,6 +168,9 @@ class ImageReviewCorrection(Base):
     # Status
     status = Column(String(20), nullable=False, default="pending")  
     # Options: 'pending', 'accepted', 'rejected'
+    
+    # Review level tracking
+    reviewer_level = Column(Integer, nullable=True)  # Which review level made this correction
     
     # Comments
     comment = Column(Text, nullable=True)  # Reviewer's comment about the correction
@@ -188,12 +207,16 @@ class ImageAnnotationQueue(Base):
     annotation_id = Column(Integer, ForeignKey("image_annotations.id"), nullable=True)
     
     # Task info
-    task_type = Column(String(50), nullable=False)  # 'annotate', 'review', 'export'
+    task_type = Column(String(50), nullable=False)  # 'annotate', 'review', 'export', 'review_started', 'review_approved_level_n', 'review_rejected_level_n'
     status = Column(String(20), default="pending")  # 'pending', 'processing', 'done', 'failed'
     priority = Column(Integer, default=0)  # Higher priority = processed first
     
     # Assigned user
     assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True)
+    
+    # Multi-level review tracking
+    review_level = Column(Integer, nullable=True)  # Which review level this task is for
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Which reviewer handled this
     
     # Additional data
     payload = Column(JSON, nullable=True)  # Additional task configuration
@@ -209,13 +232,16 @@ class ImageAnnotationQueue(Base):
     project = relationship("Project", backref="image_queue_tasks")
     resource = relationship("ImageResource", backref="queue_tasks")
     annotation = relationship("ImageAnnotation", backref="queue_tasks")
-    assignee = relationship("User", backref="assigned_image_queue_tasks")
+    assignee = relationship("User", foreign_keys=[assigned_to], backref="assigned_image_queue_tasks")
+    reviewer = relationship("User", foreign_keys=[reviewer_id], backref="image_queue_tasks_reviewed")
 
     __table_args__ = (
         Index("idx_image_queue_project", "project_id"),
         Index("idx_image_queue_status", "status"),
         Index("idx_image_queue_assigned", "assigned_to"),
+        Index("idx_image_queue_review_level", "review_level"),
+        Index("idx_image_queue_reviewer", "reviewer_id"),
     )
 
     def __repr__(self):
-        return f"<ImageAnnotationQueue(id={self.id}, project_id={self.project_id}, task_type='{self.task_type}', status='{self.status}')>"
+        return f"<ImageAnnotationQueue(id={self.id}, project_id={self.project_id}, task_type='{self.task_type}', status='{self.status}', review_level={self.review_level})>"

@@ -994,3 +994,379 @@ def get_pending_review_endpoint(
         "data": annotations,
         "total": len(annotations)
     }
+
+
+# ==================== Resource Pool Endpoints ====================
+
+@router.post("/{project_id}/resources/bulk-upload")
+async def bulk_upload_image_resources(
+    project_id: int,
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Bulk upload multiple image files for PM-provided resource pool.
+    
+    Only project managers and admins can use this endpoint.
+    """
+    from app.models.project import Project
+    
+    # Check if user is admin or project manager
+    if current_user.role not in ['admin', 'project_manager']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins and project managers can bulk upload resources"
+        )
+    
+    # Verify project exists and has PM-provided resources
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    if project.config.get('resource_provider') != 'project_manager':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This project is not configured for PM-provided resources"
+        )
+    
+    uploaded_resources = []
+    errors = []
+    
+    for file in files:
+        try:
+            resource = await crud.create_image_resource(
+                db=db,
+                project_id=project_id,
+                file=file,
+                name=file.filename or "unnamed",
+                uploader_id=current_user.id
+            )
+            uploaded_resources.append(add_urls_to_resource(resource))
+        except Exception as e:
+            errors.append({
+                "filename": file.filename,
+                "error": str(e)
+            })
+    
+    return {
+        "success": True,
+        "data": {
+            "uploaded": uploaded_resources,
+            "errors": errors,
+            "total_uploaded": len(uploaded_resources),
+            "total_errors": len(errors)
+        }
+    }
+
+
+@router.get("/{project_id}/pool/next")
+def get_next_pool_resource(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get the next available resource from the pool for annotation.
+    
+    Locks the resource to the current user.
+    """
+    from app.models.project import Project
+    from datetime import datetime
+    
+    # Check project configuration
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    if project.config.get('resource_provider') != 'project_manager':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This project is not configured for PM-provided resources"
+        )
+    
+    if not check_annotator(db, project_id, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to annotate in this project"
+        )
+    
+    resource = crud.get_next_available_resource(db, project_id)
+    if not resource:
+        return {
+            "success": True,
+            "data": None,
+            "message": "No available resources in the pool"
+        }
+    
+    # Lock the resource
+    resource.pool_status = 'locked'
+    resource.locked_by_user_id = current_user.id
+    resource.locked_at = datetime.utcnow()
+    db.commit()
+    db.refresh(resource)
+    
+    return {
+        "success": True,
+        "data": add_urls_to_resource(resource)
+    }
+
+
+@router.get("/{project_id}/pool/status")
+def get_pool_status(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get the status of the resource pool.
+    
+    Returns counts by status and list of locked resources.
+    """
+    from app.models.project import Project
+    from app.annotations.image.models import ImageResource
+    
+    # Check project configuration
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    if current_user.role not in ['admin', 'project_manager']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins and project managers can view pool status"
+        )
+    
+    # Get counts by status
+    from sqlalchemy import func
+    
+    counts = db.query(
+        ImageResource.pool_status,
+        func.count(ImageResource.id)
+    ).filter(
+        ImageResource.project_id == project_id
+    ).group_by(
+        ImageResource.pool_status
+    ).all()
+    
+    status_counts = {
+        'available': 0,
+        'locked': 0,
+        'completed': 0,
+        'skipped': 0
+    }
+    
+    for status_val, count in counts:
+        if status_val in status_counts:
+            status_counts[status_val] = count
+    
+    # Get locked resources with user info
+    locked_resources = db.query(ImageResource).filter(
+        ImageResource.project_id == project_id,
+        ImageResource.pool_status == 'locked'
+    ).all()
+    
+    locked_data = []
+    for r in locked_resources:
+        locked_data.append({
+            'id': r.id,
+            'name': r.name,
+            'pool_status': r.pool_status,
+            'locked_by': {
+                'id': r.locked_by.id,
+                'full_name': r.locked_by.full_name,
+                'email': r.locked_by.email
+            } if r.locked_by else None,
+            'locked_at': r.locked_at.isoformat() if r.locked_at else None
+        })
+    
+    return {
+        "success": True,
+        "data": {
+            "counts": status_counts,
+            "locked_resources": locked_data,
+            "total": sum(status_counts.values())
+        }
+    }
+
+
+@router.post("/{project_id}/resources/{resource_id}/skip")
+def skip_pool_resource(
+    project_id: int,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Skip a resource, returning it to the pool and getting the next one.
+    """
+    from datetime import datetime
+    
+    resource = crud.get_image_resource(db, resource_id)
+    if not resource or resource.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found"
+        )
+    
+    if resource.locked_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have this resource locked"
+        )
+    
+    # Release the lock
+    resource.pool_status = 'available'
+    resource.locked_by_user_id = None
+    resource.locked_at = None
+    db.commit()
+    
+    # Get next available resource
+    next_resource = crud.get_next_available_resource(db, project_id)
+    if next_resource:
+        next_resource.pool_status = 'locked'
+        next_resource.locked_by_user_id = current_user.id
+        next_resource.locked_at = datetime.utcnow()
+        db.commit()
+        db.refresh(next_resource)
+        
+        return {
+            "success": True,
+            "data": add_urls_to_resource(next_resource),
+            "message": "Resource skipped, new resource assigned"
+        }
+    
+    return {
+        "success": True,
+        "data": None,
+        "message": "Resource skipped, no more available resources"
+    }
+
+
+@router.post("/{project_id}/resources/{resource_id}/release-lock")
+def release_resource_lock(
+    project_id: int,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Release the lock on a resource (PM only).
+    """
+    resource = crud.get_image_resource(db, resource_id)
+    if not resource or resource.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found"
+        )
+    
+    if current_user.role not in ['admin', 'project_manager']:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins and project managers can release locks"
+        )
+    
+    resource.pool_status = 'available'
+    resource.locked_by_user_id = None
+    resource.locked_at = None
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Lock released successfully"
+    }
+
+
+# ==================== Review Pool Endpoints ====================
+
+@router.get("/{project_id}/review-pool/next")
+def get_next_review_annotation(
+    project_id: int,
+    level: int = Query(1, ge=1, description="Review level"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Get the next annotation for review at the specified level.
+    """
+    from datetime import datetime
+    
+    if not check_reviewer(db, project_id, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to review in this project"
+        )
+    
+    annotation = crud.get_next_annotation_for_review(db, project_id, level, current_user.id)
+    
+    if not annotation:
+        return {
+            "success": True,
+            "data": None,
+            "message": "No annotations waiting for review at this level"
+        }
+    
+    # Lock for review
+    annotation.review_locked_by = current_user.id
+    annotation.review_locked_at = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "success": True,
+        "data": annotation_to_response(annotation)
+    }
+
+
+@router.post("/{project_id}/annotations/{annotation_id}/skip-review")
+def skip_review_annotation(
+    project_id: int,
+    annotation_id: int,
+    level: int = Query(1, ge=1, description="Review level"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Skip an annotation review, releasing the lock and getting the next one.
+    """
+    from datetime import datetime
+    
+    annotation = crud.get_image_annotation(db, annotation_id)
+    if not annotation or annotation.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Annotation not found"
+        )
+    
+    # Release the lock
+    annotation.review_locked_by = None
+    annotation.review_locked_at = None
+    db.commit()
+    
+    # Get next annotation for review
+    next_annotation = crud.get_next_annotation_for_review(db, project_id, level, current_user.id)
+    
+    if next_annotation:
+        next_annotation.review_locked_by = current_user.id
+        next_annotation.review_locked_at = datetime.utcnow()
+        db.commit()
+        
+        return {
+            "success": True,
+            "data": annotation_to_response(next_annotation),
+            "message": "Review skipped, next annotation assigned"
+        }
+    
+    return {
+        "success": True,
+        "data": None,
+        "message": "Review skipped, no more annotations waiting"
+    }

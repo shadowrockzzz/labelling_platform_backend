@@ -569,13 +569,26 @@ def enqueue_task(
     task_type: str,
     payload: dict,
     annotation_type: str = "text",
-    annotation_id: Optional[int] = None
+    annotation_id: Optional[int] = None,
+    review_level: Optional[int] = None,
+    reviewer_id: Optional[int] = None
 ) -> TextAnnotationQueue:
     """
     Add a task to the queue.
     
     Each queue is identified by (project_id, annotation_type) combination.
     This ensures isolation between different annotation types and projects.
+    
+    Args:
+        db: Database session
+        project_id: Project ID
+        resource_id: Resource ID (optional)
+        task_type: Type of task
+        payload: Task payload
+        annotation_type: Type of annotation (default 'text')
+        annotation_id: Annotation ID (optional)
+        review_level: Current review level for multi-level review (optional)
+        reviewer_id: Reviewer user ID for multi-level review (optional)
     """
     task = TextAnnotationQueue(
         project_id=project_id,
@@ -584,7 +597,9 @@ def enqueue_task(
         annotation_id=annotation_id,
         task_type=task_type,
         payload=payload,
-        status="pending"
+        status="pending",
+        review_level=review_level,
+        reviewer_id=reviewer_id
     )
     db.add(task)
     db.commit()

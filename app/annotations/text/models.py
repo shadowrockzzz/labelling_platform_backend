@@ -19,17 +19,24 @@ class TextResource(Base):
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default="now()")
     status = Column(String(20), default="active")  # 'active' or 'archived'
+    
+    # Resource pool fields
+    pool_status = Column(String(20), default="available")  # 'available', 'locked', 'completed', 'skipped'
+    locked_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     project = relationship("Project", backref="text_resources")
     annotations = relationship("TextAnnotation", back_populates="resource", cascade="all, delete-orphan")
+    locked_by = relationship("User", foreign_keys=[locked_by_user_id], backref="locked_text_resources")
 
     __table_args__ = (
         Index("idx_text_resources_project", "project_id"),
+        Index("idx_text_resources_pool_status", "pool_status"),
     )
 
     def __repr__(self):
-        return f"<TextResource(id={self.id}, name='{self.name}', source_type='{self.source_type}')>"
+        return f"<TextResource(id={self.id}, name='{self.name}', source_type='{self.source_type}', pool_status='{self.pool_status}')>"
 
 
 class TextAnnotation(Base):
@@ -43,7 +50,8 @@ class TextAnnotation(Base):
     reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     annotation_type = Column(String(50), nullable=False, default="text")  # module-level: 'text', 'image', 'video', etc.
     annotation_sub_type = Column(String(50), nullable=True)  # sub-types: 'ner', 'pos', 'sentiment', 'relation', 'span', 'classification', 'dependency', 'coreference'
-    status = Column(String(30), nullable=False, default="pending")  # uses AnnotationStatus enum values
+    status = Column(String(30), nullable=False, default="draft")  # 'draft', 'submitted', 'in_review', 'approved', 'rejected', 'pending_correction'
+    current_review_level = Column(Integer, default=0)  # 0=with annotator, 1=with level-1 reviewer, 2=with level-2, etc.
     label = Column(String(100), nullable=True)
     span_start = Column(Integer, nullable=True)  # char index start (for NER spans)
     span_end = Column(Integer, nullable=True)  # char index end
@@ -54,11 +62,16 @@ class TextAnnotation(Base):
     updated_at = Column(DateTime(timezone=True), onupdate="now()")
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Review locking for pool mode
+    review_locked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    review_locked_at = Column(DateTime(timezone=True), nullable=True)
 
     # Relationships
     resource = relationship("TextResource", back_populates="annotations")
     annotator = relationship("User", foreign_keys=[annotator_id], backref="text_annotations_created")
     reviewer = relationship("User", foreign_keys=[reviewer_id], backref="text_annotations_reviewed")
+    review_lock_user = relationship("User", foreign_keys=[review_locked_by], backref="review_locked_text_annotations")
     review_corrections = relationship("ReviewCorrection", back_populates="annotation", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -66,10 +79,11 @@ class TextAnnotation(Base):
         Index("idx_text_annotations_resource", "resource_id"),
         Index("idx_text_annotations_annotator", "annotator_id"),
         Index("idx_text_annotations_status", "status"),
+        Index("idx_text_annotations_review_level", "current_review_level"),
     )
 
     def __repr__(self):
-        return f"<TextAnnotation(id={self.id}, resource_id={self.resource_id}, sub_type='{self.annotation_sub_type}', status='{self.status}')>"
+        return f"<TextAnnotation(id={self.id}, resource_id={self.resource_id}, sub_type='{self.annotation_sub_type}', status='{self.status}', review_level={self.current_review_level})>"
 
 
 class TextAnnotationQueue(Base):
@@ -86,23 +100,30 @@ class TextAnnotationQueue(Base):
     annotation_type = Column(String(50), nullable=False, default="text", index=True)  # 'text', 'image', 'video', etc.
     resource_id = Column(Integer, ForeignKey("text_resources.id"), nullable=True)
     annotation_id = Column(Integer, ForeignKey("text_annotations.id"), nullable=True)
-    task_type = Column(String(50), nullable=False)  # 'resource_uploaded', 'annotation_created', 'annotation_submitted', 'annotation_approved', 'annotation_rejected', 'output'
+    task_type = Column(String(50), nullable=False)  # 'resource_uploaded', 'annotation_created', 'annotation_submitted', 'annotation_approved', 'annotation_rejected', 'output', 'review_started', 'review_approved_level_n', 'review_rejected_level_n'
     status = Column(String(20), default="pending")  # 'pending','processing','done','failed'
     payload = Column(JSON, nullable=False)
     rq_job_id = Column(String(255), nullable=True, index=True)  # Redis Queue job ID for tracking
     created_at = Column(DateTime(timezone=True), server_default="now()")
     processed_at = Column(DateTime(timezone=True), nullable=True)
     error_message = Column(Text, nullable=True)
+    
+    # Multi-level review tracking
+    review_level = Column(Integer, nullable=True)  # Which review level this task is for
+    reviewer_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Which reviewer handled this
 
     # Relationships
     project = relationship("Project", backref="queue_tasks")
     resource = relationship("TextResource", backref="queue_tasks")
     annotation = relationship("TextAnnotation", backref="queue_tasks")
+    reviewer = relationship("User", foreign_keys=[reviewer_id], backref="text_queue_tasks_reviewed")
 
     # Composite index for efficient querying by project_id + annotation_type
     __table_args__ = (
         Index("idx_queue_project_annotation", "project_id", "annotation_type"),
+        Index("idx_queue_review_level", "review_level"),
+        Index("idx_queue_reviewer", "reviewer_id"),
     )
 
     def __repr__(self):
-        return f"<TextAnnotationQueue(id={self.id}, project_id={self.project_id}, annotation_type='{self.annotation_type}', task_type='{self.task_type}', status='{self.status}')>"
+        return f"<TextAnnotationQueue(id={self.id}, project_id={self.project_id}, annotation_type='{self.annotation_type}', task_type='{self.task_type}', status='{self.status}', review_level={self.review_level})>"

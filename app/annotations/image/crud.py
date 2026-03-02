@@ -730,3 +730,41 @@ def get_pending_review_annotations(
         ImageAnnotation.project_id == project_id,
         ImageAnnotation.status == AnnotationStatusEnum.SUBMITTED.value
     ).order_by(ImageAnnotation.submitted_at).limit(limit).all()
+
+
+# ==================== Resource Pool Operations ====================
+
+def get_next_available_resource(
+    db: Session,
+    project_id: int
+) -> Optional[ImageResource]:
+    """
+    Get the next available resource from the pool.
+    Returns the oldest available resource (FIFO).
+    """
+    return db.query(ImageResource).filter(
+        ImageResource.project_id == project_id,
+        ImageResource.is_archived == False,
+        ImageResource.pool_status == 'available'
+    ).order_by(ImageResource.created_at).first()
+
+
+def get_next_annotation_for_review(
+    db: Session,
+    project_id: int,
+    review_level: int,
+    reviewer_id: int
+) -> Optional[ImageAnnotation]:
+    """
+    Get the next annotation for review at the specified level.
+    Excludes annotations already locked by another reviewer.
+    """
+    return db.query(ImageAnnotation).filter(
+        ImageAnnotation.project_id == project_id,
+        ImageAnnotation.status == AnnotationStatusEnum.IN_REVIEW.value,
+        ImageAnnotation.current_review_level == review_level,
+        or_(
+            ImageAnnotation.review_locked_by == None,
+            ImageAnnotation.review_locked_by == reviewer_id
+        )
+    ).order_by(ImageAnnotation.submitted_at).first()

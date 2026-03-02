@@ -66,9 +66,58 @@ def create_new_project(
 ):
     """
     Create a new project (Admin/Manager only).
+    Optionally accepts reviewer_chain to set up multi-level review on creation.
     """
+    from app.crud.assignment import create_assignment
+    
+    # Create the project
     project = create_project(db, project_in, owner_id=current_user.id)
-    return ProjectResponse(success=True, data=project)
+    
+    # If reviewer_chain is provided, create the assignments
+    if project_in.reviewer_chain and len(project_in.reviewer_chain) > 0:
+        # Validate levels are consecutive starting from 1
+        levels = sorted([r.review_level for r in project_in.reviewer_chain])
+        expected_levels = list(range(1, len(levels) + 1))
+        if levels != expected_levels:
+            # Rollback project creation
+            db.delete(project)
+            db.commit()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Review levels must be consecutive starting from 1. Got: {levels}"
+            )
+        
+        # Create reviewer assignments
+        for reviewer_item in project_in.reviewer_chain:
+            # Check if user exists
+            from app.crud.user import get_user_by_id
+            user = get_user_by_id(db, reviewer_item.user_id)
+            if not user:
+                db.delete(project)
+                db.commit()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"User {reviewer_item.user_id} not found"
+                )
+            
+            # Create assignment with level
+            create_assignment(
+                db,
+                int(project.id),
+                reviewer_item.user_id,
+                "reviewer",
+                review_level=reviewer_item.review_level
+            )
+        
+        db.commit()
+    
+    # Add team counts
+    counts = get_project_counts(db, int(project.id))
+    project_dict = ProjectRead.model_validate(project).model_dump()
+    project_dict['reviewer_count'] = counts['reviewer_count']
+    project_dict['annotator_count'] = counts['annotator_count']
+    
+    return ProjectResponse(success=True, data=ProjectRead(**project_dict))
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 def get_project(
@@ -165,3 +214,59 @@ def delete_project(
         )
     
     return {"success": True, "message": "Project deleted successfully"}
+
+
+@router.put("/{project_id}/manager")
+def update_project_manager(
+    project_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """
+    Update project manager (Admin only).
+    Changes the project owner_id to a new user.
+    """
+    from app.models.user import User
+    
+    new_manager_id = body.get("user_id")
+    if not new_manager_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="user_id is required"
+        )
+    
+    # Check project exists
+    project = get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Check new manager exists and has appropriate role
+    new_manager = db.query(User).filter(User.id == new_manager_id).first()
+    if not new_manager:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    if new_manager.role not in ["admin", "project_manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User must have admin or project_manager role"
+        )
+    
+    # Update owner
+    project.owner_id = new_manager_id
+    db.commit()
+    db.refresh(project)
+    
+    # Add team counts
+    counts = get_project_counts(db, project_id)
+    project_dict = ProjectRead.model_validate(project).model_dump()
+    project_dict['reviewer_count'] = counts['reviewer_count']
+    project_dict['annotator_count'] = counts['annotator_count']
+    
+    return ProjectResponse(success=True, data=ProjectRead(**project_dict))

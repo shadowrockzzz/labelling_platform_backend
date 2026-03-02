@@ -4,6 +4,22 @@ All notable changes to the Labelling Platform backend will be documented in this
 
 ---
 
+## [2026.03.02] - March 2, 2026
+
+### Bug Fixes
+
+#### Database Schema
+- **Fixed:** Missing `review_locked_by` and `review_locked_at` columns in annotation tables
+  - These columns were defined in SQLAlchemy models but missing from the database
+  - Caused 500 Internal Server Error when creating shapes in image annotation
+  - Added migration `migration_add_review_lock_columns.py` to add missing columns
+  - Columns added to both `image_annotations` and `text_annotations` tables
+
+### Migration
+- `migration_add_review_lock_columns.py` - Adds review lock columns for pool-based review workflow
+
+---
+
 ## [Unreleased]
 
 ### Added
@@ -182,6 +198,7 @@ All notable changes to the Labelling Platform backend will be documented in this
 | `migration_add_image_annotation.py` | Image annotation tables |
 | `migration_add_review_corrections.py` | Review corrections table |
 | `migration_add_rq_job_id.py` | Added rq_job_id for Redis queue |
+| `migration_add_review_lock_columns.py` | Added review_locked_by/at columns (2026.03.02) |
 
 ---
 

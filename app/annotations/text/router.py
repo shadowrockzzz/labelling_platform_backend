@@ -143,6 +143,478 @@ def check_reviewer(db: Session, project_id: int, user: User) -> bool:
     return assignment is not None
 
 
+# ==================== Resource Pool Endpoints ====================
+
+@router.post("/{project_id}/resources/bulk-upload")
+async def bulk_upload_resources_endpoint(
+    project_id: int,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Bulk upload text files as resources (PM only for pool-based projects).
+    
+    Resources are added with pool_status='available'.
+    """
+    from datetime import datetime
+    import uuid
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    # Only manager or admin can bulk upload
+    if current_user.role not in ["admin", "project_manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only project managers and admins can bulk upload resources"
+        )
+    
+    # Check if project uses PM-provided resources
+    config = project.config or {}
+    if config.get("resource_provider") != "project_manager":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This project is configured for annotator-provided resources"
+        )
+    
+    from app.utils.s3_utils import upload_file_to_s3
+    
+    uploaded_resources = []
+    errors = []
+    
+    for file in files:
+        try:
+            # Read file content
+            content = await file.read()
+            text_content = content.decode('utf-8')
+            
+            # Generate S3 key
+            s3_key = f"text_resources/{project_id}/{uuid.uuid4()}_{file.filename}"
+            
+            # Upload to S3
+            upload_file_to_s3(
+                file_content=content,
+                s3_key=s3_key,
+                content_type="text/plain"
+            )
+            
+            # Create resource with pool_status
+            from app.annotations.text.crud import create_resource
+            resource_data = {
+                'name': file.filename,
+                'source_type': 'file_upload',
+                's3_key': s3_key,
+                'content_preview': text_content[:500] if text_content else None,
+                'status': 'active'
+            }
+            
+            resource = create_resource(db, project_id, current_user.id, resource_data)
+            
+            # Set pool_status
+            resource.pool_status = 'available'
+            db.commit()
+            db.refresh(resource)
+            
+            uploaded_resources.append({
+                'id': resource.id,
+                'name': resource.name,
+                'pool_status': resource.pool_status
+            })
+            
+        except Exception as e:
+            errors.append({
+                'filename': file.filename,
+                'error': str(e)
+            })
+    
+    return {
+        "success": True,
+        "data": {
+            "uploaded": uploaded_resources,
+            "errors": errors,
+            "total_uploaded": len(uploaded_resources),
+            "total_errors": len(errors)
+        }
+    }
+
+
+@router.get("/{project_id}/pool/next")
+def get_next_pool_resource_endpoint(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Get next available resource from the pool and lock it for the annotator.
+    
+    Returns the next 'available' resource and sets it to 'locked' status.
+    """
+    from datetime import datetime
+    from app.annotations.text.models import TextResource
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    # Check if annotator is assigned to this project
+    assignment = db.query(ProjectAssignment).filter(
+        ProjectAssignment.project_id == project_id,
+        ProjectAssignment.user_id == current_user.id,
+        ProjectAssignment.role == 'annotator'
+    ).first()
+    
+    if not assignment and current_user.role not in ["admin", "project_manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not assigned as an annotator to this project"
+        )
+    
+    # Find next available resource
+    resource = db.query(TextResource).filter(
+        TextResource.project_id == project_id,
+        TextResource.status == 'active',
+        TextResource.pool_status == 'available'
+    ).order_by(TextResource.created_at.asc()).first()
+    
+    if not resource:
+        return {
+            "success": True,
+            "data": None,
+            "message": "No available resources in the pool"
+        }
+    
+    # Lock the resource
+    resource.pool_status = 'locked'
+    resource.locked_by_user_id = current_user.id
+    resource.locked_at = datetime.utcnow()
+    db.commit()
+    db.refresh(resource)
+    
+    # Get full content
+    resource_data = service.get_resource_with_content(db, resource.id)
+    
+    return {
+        "success": True,
+        "data": resource_data,
+        "message": "Resource locked for annotation"
+    }
+
+
+@router.post("/{project_id}/resources/{resource_id}/skip")
+def skip_pool_resource_endpoint(
+    project_id: int,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Skip a locked resource - release lock and get next available resource.
+    
+    Sets current resource back to 'available' and returns the next one.
+    """
+    from datetime import datetime
+    from app.annotations.text.models import TextResource
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    resource = get_resource(db, resource_id)
+    if not resource or resource.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found"
+        )
+    
+    # Verify the resource is locked by this user
+    if resource.pool_status != 'locked' or resource.locked_by_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resource is not locked by you"
+        )
+    
+    # Release the lock
+    resource.pool_status = 'available'
+    resource.locked_by_user_id = None
+    resource.locked_at = None
+    db.commit()
+    
+    # Get next available resource
+    next_resource = db.query(TextResource).filter(
+        TextResource.project_id == project_id,
+        TextResource.status == 'active',
+        TextResource.pool_status == 'available',
+        TextResource.id != resource_id
+    ).order_by(TextResource.created_at.asc()).first()
+    
+    if next_resource:
+        # Lock the next resource
+        next_resource.pool_status = 'locked'
+        next_resource.locked_by_user_id = current_user.id
+        next_resource.locked_at = datetime.utcnow()
+        db.commit()
+        db.refresh(next_resource)
+        
+        resource_data = service.get_resource_with_content(db, next_resource.id)
+        
+        return {
+            "success": True,
+            "data": resource_data,
+            "message": "Resource skipped, new resource locked"
+        }
+    
+    return {
+        "success": True,
+        "data": None,
+        "message": "Resource skipped, no more available resources"
+    }
+
+
+@router.post("/{project_id}/resources/{resource_id}/release-lock")
+def release_resource_lock_endpoint(
+    project_id: int,
+    resource_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Release lock on a resource (PM or admin only).
+    
+    Allows PM to manually release locks stuck on resources.
+    """
+    from app.annotations.text.models import TextResource
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    # Only manager or admin can release locks
+    if current_user.role not in ["admin", "project_manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only project managers and admins can release locks"
+        )
+    
+    resource = get_resource(db, resource_id)
+    if not resource or resource.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Resource not found"
+        )
+    
+    if resource.pool_status != 'locked':
+        return {
+            "success": True,
+            "message": "Resource is not locked"
+        }
+    
+    # Release the lock
+    resource.pool_status = 'available'
+    resource.locked_by_user_id = None
+    resource.locked_at = None
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": "Lock released successfully"
+    }
+
+
+@router.get("/{project_id}/pool/status")
+def get_pool_status_endpoint(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Get resource pool status summary (PM/admin only).
+    """
+    from sqlalchemy import func
+    from app.annotations.text.models import TextResource
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    # Only manager or admin can view pool status
+    if current_user.role not in ["admin", "project_manager"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only project managers and admins can view pool status"
+        )
+    
+    # Get counts by status
+    status_counts = db.query(
+        TextResource.pool_status,
+        func.count(TextResource.id)
+    ).filter(
+        TextResource.project_id == project_id,
+        TextResource.status == 'active'
+    ).group_by(TextResource.pool_status).all()
+    
+    counts = {
+        'available': 0,
+        'locked': 0,
+        'completed': 0,
+        'skipped': 0
+    }
+    
+    for status_val, count in status_counts:
+        if status_val in counts:
+            counts[status_val] = count
+    
+    # Get locked resources with user info
+    locked_resources = db.query(TextResource).filter(
+        TextResource.project_id == project_id,
+        TextResource.pool_status == 'locked'
+    ).all()
+    
+    locked_details = []
+    for res in locked_resources:
+        locked_details.append({
+            'id': res.id,
+            'name': res.name,
+            'locked_by_user_id': res.locked_by_user_id,
+            'locked_at': res.locked_at.isoformat() if res.locked_at else None
+        })
+    
+    return {
+        "success": True,
+        "data": {
+            "counts": counts,
+            "locked_resources": locked_details,
+            "total": sum(counts.values())
+        }
+    }
+
+
+# ==================== Review Pool Endpoints ====================
+
+@router.get("/{project_id}/review-pool/next")
+def get_next_review_annotation_endpoint(
+    project_id: int,
+    level: int = Query(1, ge=1, description="Review level (1, 2, 3, ...)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Get next annotation for review at the specified level and lock it.
+    
+    Returns the next 'in_review' annotation at the given level.
+    """
+    from datetime import datetime
+    from app.annotations.text.models import TextAnnotation
+    from app.crud.assignment import is_user_reviewer_for_level
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    # Check if user is a reviewer for this level
+    if not is_user_reviewer_for_level(db, project_id, current_user.id, level):
+        if current_user.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"You are not assigned as a reviewer at level {level}"
+            )
+    
+    # Find next annotation in_review at this level, not locked by another reviewer
+    annotation = db.query(TextAnnotation).filter(
+        TextAnnotation.project_id == project_id,
+        TextAnnotation.status == 'in_review',
+        TextAnnotation.current_review_level == level
+    ).filter(
+        (TextAnnotation.reviewer_lock_user_id == None) |
+        (TextAnnotation.reviewer_lock_user_id == current_user.id)
+    ).order_by(TextAnnotation.submitted_at.asc()).first()
+    
+    if not annotation:
+        return {
+            "success": True,
+            "data": None,
+            "message": f"No annotations waiting for review at level {level}"
+        }
+    
+    # Lock the annotation for this reviewer
+    annotation.reviewer_lock_user_id = current_user.id
+    annotation.reviewer_lock_at = datetime.utcnow()
+    db.commit()
+    db.refresh(annotation)
+    
+    response = annotation_to_response(annotation)
+    
+    # Get resource content
+    resource_data = service.get_resource_with_content(db, annotation.resource_id)
+    response['resource'] = resource_data
+    
+    return {
+        "success": True,
+        "data": response,
+        "message": "Annotation locked for review"
+    }
+
+
+@router.post("/{project_id}/annotations/{annotation_id}/skip-review")
+def skip_review_annotation_endpoint(
+    project_id: int,
+    annotation_id: int,
+    level: int = Query(1, ge=1, description="Current review level"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_annotator)
+):
+    """
+    Skip an annotation during review - release lock and get next one.
+    """
+    from datetime import datetime
+    from app.annotations.text.models import TextAnnotation
+    from app.crud.assignment import is_user_reviewer_for_level
+    
+    project = check_project_access(db, project_id, current_user)
+    
+    annotation = get_annotation(db, annotation_id)
+    if not annotation or annotation.project_id != project_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Annotation not found"
+        )
+    
+    # Verify the annotation is locked by this reviewer
+    if annotation.reviewer_lock_user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Annotation is not locked by you"
+        )
+    
+    # Release the lock
+    annotation.reviewer_lock_user_id = None
+    annotation.reviewer_lock_at = None
+    db.commit()
+    
+    # Get next annotation at same level
+    next_annotation = db.query(TextAnnotation).filter(
+        TextAnnotation.project_id == project_id,
+        TextAnnotation.status == 'in_review',
+        TextAnnotation.current_review_level == level,
+        TextAnnotation.id != annotation_id
+    ).filter(
+        (TextAnnotation.reviewer_lock_user_id == None) |
+        (TextAnnotation.reviewer_lock_user_id == current_user.id)
+    ).order_by(TextAnnotation.submitted_at.asc()).first()
+    
+    if next_annotation:
+        # Lock the next annotation
+        next_annotation.reviewer_lock_user_id = current_user.id
+        next_annotation.reviewer_lock_at = datetime.utcnow()
+        db.commit()
+        db.refresh(next_annotation)
+        
+        response = annotation_to_response(next_annotation)
+        resource_data = service.get_resource_with_content(db, next_annotation.resource_id)
+        response['resource'] = resource_data
+        
+        return {
+            "success": True,
+            "data": response,
+            "message": "Annotation skipped, next annotation locked"
+        }
+    
+    return {
+        "success": True,
+        "data": None,
+        "message": "Annotation skipped, no more annotations at this level"
+    }
+
+
 # ==================== Resource Endpoints ====================
 
 @router.get("/{project_id}/queue/unannotated")

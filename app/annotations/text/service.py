@@ -34,6 +34,7 @@ from app.models.project_assignment import ProjectAssignment
 from app.models.project import Project
 import json
 import httpx
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -452,12 +453,16 @@ def submit_annotation_service(
     user_id: int
 ) -> dict:
     """
-    Submit an annotation for review.
+    Submit an annotation for review with multi-level support.
     
     1. Validate annotation belongs to user
     2. Validate status
-    3. Update and enqueue
+    3. Update status to 'in_review', set current_review_level = 1
+    4. Assign level-1 reviewer
+    5. Enqueue task
     """
+    from app.crud.assignment import get_reviewer_for_level, get_max_review_level
+    
     annotation = get_annotation(db, annotation_id)
     if not annotation:
         raise HTTPException(
@@ -471,24 +476,59 @@ def submit_annotation_service(
             detail="You can only submit your own annotations"
         )
     
-    if annotation.status not in ["pending", "in_progress"]:
+    if annotation.status not in ["draft", "pending", "in_progress", "rejected"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only submit pending or in-progress annotations"
+            detail="Can only submit draft, pending, in-progress, or rejected annotations"
         )
     
-    # Submit
-    annotation = submit_annotation(db, annotation_id)
+    # Check if project has reviewers configured
+    max_level = get_max_review_level(db, annotation.project_id)
+    
+    if max_level == 0:
+        # No reviewers - auto-approve
+        annotation.status = "approved"
+        annotation.submitted_at = datetime.now()
+        db.commit()
+        db.refresh(annotation)
+        
+        # Save output to S3
+        processor = TextAnnotationProcessor()
+        s3_key = processor.get_output_path(annotation.project_id, annotation.id)
+        output_data = format_annotation_output(annotation)
+        save_json_to_s3(output_data, s3_key)
+        update_annotation(db, annotation_id, {"output_s3_key": s3_key})
+        
+        logger.info(f"Auto-approved annotation {annotation_id} (no reviewers configured)")
+        return annotation
+    
+    # Get level-1 reviewer
+    level_1_reviewer = get_reviewer_for_level(db, annotation.project_id, 1)
+    if not level_1_reviewer:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No level-1 reviewer assigned to this project"
+        )
+    
+    # Update annotation for multi-level review
+    annotation.status = "in_review"
+    annotation.current_review_level = 1
+    annotation.reviewer_id = level_1_reviewer["user_id"]
+    annotation.submitted_at = datetime.now()
+    db.commit()
+    db.refresh(annotation)
     
     # Enqueue with annotation_type='text', annotation_sub_type, and annotation_id
     queue = TextQueueStub(db, annotation_type="text")
     queue.enqueue(annotation.project_id, annotation.resource_id, "annotation_submitted", {
         "annotation_id": annotation.id,
         "annotator_id": user_id,
-        "annotation_sub_type": annotation.annotation_sub_type
-    }, annotation_id=annotation.id)
+        "annotation_sub_type": annotation.annotation_sub_type,
+        "review_level": 1,
+        "reviewer_id": level_1_reviewer["user_id"]
+    }, annotation_id=annotation.id, review_level=1, reviewer_id=level_1_reviewer["user_id"])
     
-    logger.info(f"Submitted annotation {annotation_id}")
+    logger.info(f"Submitted annotation {annotation_id} for review at level 1")
     return annotation
 
 

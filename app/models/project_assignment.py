@@ -10,6 +10,7 @@ class ProjectAssignment(Base):
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     role = Column(String, nullable=False)  # 'project_manager', 'reviewer', 'annotator'
+    review_level = Column(Integer, nullable=True)  # Only for reviewers: 1, 2, 3... (1 = first reviewer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
@@ -17,4 +18,4 @@ class ProjectAssignment(Base):
     user = relationship("User", back_populates="assignments")
 
     def __repr__(self):
-        return f"<ProjectAssignment(project_id={self.project_id}, user_id={self.user_id}, role={self.role})>"
+        return f"<ProjectAssignment(project_id={self.project_id}, user_id={self.user_id}, role={self.role}, review_level={self.review_level})>"
