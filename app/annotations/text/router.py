@@ -215,6 +215,11 @@ async def bulk_upload_resources_endpoint(
             db.commit()
             db.refresh(resource)
             
+            # Auto-seed task for this resource
+            from app.annotations.shared.task_crud import AnnotationTaskCRUD
+            task_crud = AnnotationTaskCRUD(db, resource_type="text")
+            task_crud.seed_tasks_from_resources(project_id, [resource.id])
+            
             uploaded_resources.append({
                 'id': resource.id,
                 'name': resource.name,
@@ -377,8 +382,10 @@ def release_resource_lock_endpoint(
     Release lock on a resource (PM or admin only).
     
     Allows PM to manually release locks stuck on resources.
+    Also releases the corresponding annotation_task if it exists.
     """
     from app.annotations.text.models import TextResource
+    from app.annotations.shared.task_models import AnnotationTask
     
     project = check_project_access(db, project_id, current_user)
     
@@ -402,10 +409,26 @@ def release_resource_lock_endpoint(
             "message": "Resource is not locked"
         }
     
-    # Release the lock
+    # Release the lock on the resource
     resource.pool_status = 'available'
     resource.locked_by_user_id = None
     resource.locked_at = None
+    
+    # Also release the corresponding annotation_task if it exists
+    task = db.query(AnnotationTask).filter(
+        AnnotationTask.project_id == project_id,
+        AnnotationTask.resource_id == resource_id,
+        AnnotationTask.resource_type == 'text',
+        AnnotationTask.status == 'locked'
+    ).first()
+    
+    if task:
+        task.status = 'available'
+        task.annotator_id = None
+        task.locked_at = None
+        task.lock_expires_at = None
+        db.add(task)
+    
     db.commit()
     
     return {
@@ -659,6 +682,12 @@ async def upload_resource_endpoint(
     project = check_project_access(db, project_id, current_user)
     
     resource = await service.upload_resource(db, project_id, current_user.id, file, name)
+    
+    # Auto-seed task for this resource
+    from app.annotations.shared.task_crud import AnnotationTaskCRUD
+    task_crud = AnnotationTaskCRUD(db, resource_type="text")
+    task_crud.seed_tasks_from_resources(project_id, [resource.id])
+    
     return resource
 
 

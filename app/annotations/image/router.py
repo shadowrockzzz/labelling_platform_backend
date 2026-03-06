@@ -151,6 +151,11 @@ async def upload_image_resource(
         uploader_id=current_user.id
     )
     
+    # Auto-seed task for this resource
+    from app.annotations.shared.task_crud import AnnotationTaskCRUD
+    task_crud = AnnotationTaskCRUD(db, resource_type="image")
+    task_crud.seed_tasks_from_resources(project_id, [resource.id])
+    
     return add_urls_to_resource(resource)
 
 
@@ -1034,6 +1039,7 @@ async def bulk_upload_image_resources(
         )
     
     uploaded_resources = []
+    uploaded_resource_ids = []
     errors = []
     
     for file in files:
@@ -1046,11 +1052,18 @@ async def bulk_upload_image_resources(
                 uploader_id=current_user.id
             )
             uploaded_resources.append(add_urls_to_resource(resource))
+            uploaded_resource_ids.append(resource.id)
         except Exception as e:
             errors.append({
                 "filename": file.filename,
                 "error": str(e)
             })
+    
+    # Auto-seed tasks for all uploaded resources
+    if uploaded_resource_ids:
+        from app.annotations.shared.task_crud import AnnotationTaskCRUD
+        task_crud = AnnotationTaskCRUD(db, resource_type="image")
+        task_crud.seed_tasks_from_resources(project_id, uploaded_resource_ids)
     
     return {
         "success": True,
@@ -1261,7 +1274,10 @@ def release_resource_lock(
 ):
     """
     Release the lock on a resource (PM only).
+    Also releases the corresponding annotation_task if it exists.
     """
+    from app.annotations.shared.task_models import AnnotationTask
+    
     resource = crud.get_image_resource(db, resource_id)
     if not resource or resource.project_id != project_id:
         raise HTTPException(
@@ -1275,9 +1291,26 @@ def release_resource_lock(
             detail="Only admins and project managers can release locks"
         )
     
+    # Release the lock on the resource
     resource.pool_status = 'available'
     resource.locked_by_user_id = None
     resource.locked_at = None
+    
+    # Also release the corresponding annotation_task if it exists
+    task = db.query(AnnotationTask).filter(
+        AnnotationTask.project_id == project_id,
+        AnnotationTask.resource_id == resource_id,
+        AnnotationTask.resource_type == 'image',
+        AnnotationTask.status == 'locked'
+    ).first()
+    
+    if task:
+        task.status = 'available'
+        task.annotator_id = None
+        task.locked_at = None
+        task.lock_expires_at = None
+        db.add(task)
+    
     db.commit()
     
     return {

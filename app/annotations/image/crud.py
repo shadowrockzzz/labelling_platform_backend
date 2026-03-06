@@ -366,24 +366,22 @@ def delete_image_annotation(db: Session, annotation_id: int) -> bool:
 def submit_annotation(db: Session, annotation_id: int) -> Optional[ImageAnnotation]:
     """Submit annotation for review.
     
-    Allows submission from both draft and rejected statuses.
-    Rejected annotations can be resubmitted after fixes.
+    Allows submission from any non-submitted status.
+    Approved/rejected annotations can be resubmitted after fixes.
+    If already submitted or in_review, returns the annotation without error.
     """
     annotation = get_image_annotation(db, annotation_id)
     if not annotation:
         return None
     
-    if annotation.status not in [AnnotationStatusEnum.DRAFT.value, AnnotationStatusEnum.REJECTED.value]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Can only submit annotations in draft or rejected status"
-        )
+    # If already submitted or in review, just return it (idempotent)
+    if annotation.status in [AnnotationStatusEnum.SUBMITTED.value, AnnotationStatusEnum.IN_REVIEW.value]:
+        return annotation
     
-    # Clear previous review data if resubmitting a rejected annotation
-    if annotation.status == AnnotationStatusEnum.REJECTED.value:
-        annotation.review_comment = None
-        annotation.reviewer_id = None
-        annotation.reviewed_at = None
+    # Clear previous review data when resubmitting
+    annotation.review_comment = None
+    annotation.reviewer_id = None
+    annotation.reviewed_at = None
     
     annotation.status = AnnotationStatusEnum.SUBMITTED.value
     annotation.submitted_at = datetime.utcnow()

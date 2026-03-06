@@ -4,6 +4,32 @@ All notable changes to the Labelling Platform backend will be documented in this
 
 ---
 
+## [2026.03.06] - March 6, 2026
+
+### Bug Fixes
+
+#### Resource Pool Lock Synchronization
+- **Fixed:** Lock not being re-acquired after admin releases it
+  - Root cause: Two separate locking mechanisms (`annotation_tasks` and resource `pool_status`) were not synchronized
+  - When admin released a lock via Resource Pool UI, only the resource's `pool_status` was reset
+  - The corresponding `annotation_task` remained locked, preventing annotators from reclaiming the task
+  - **Solution:** Updated `release_resource_lock_endpoint` in both text and image routers to also reset the corresponding `annotation_task`
+
+#### Changed Files
+- `app/annotations/text/router.py` - `release_resource_lock_endpoint` now also releases `annotation_task`
+- `app/annotations/image/router.py` - `release_resource_lock` now also releases `annotation_task`
+
+### Technical Details
+When PM/Admin clicks "Release Lock" in Resource Pool UI, the following now happens:
+1. Resource's `pool_status` → `'available'`
+2. Resource's `locked_by_user_id` → `None`
+3. Resource's `locked_at` → `None`
+4. **NEW:** Annotation task's `status` → `'available'`
+5. **NEW:** Annotation task's `annotator_id` → `None`
+6. **NEW:** Annotation task's `locked_at`, `lock_expires_at` → `None`
+
+---
+
 ## [2026.03.02] - March 2, 2026
 
 ### Bug Fixes

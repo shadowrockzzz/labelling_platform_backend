@@ -366,7 +366,108 @@ TASK_FUNCTION_MAP = {
     "annotation_approved": f"{__name__}.process_annotation_approved",
     "annotation_rejected": f"{__name__}.process_annotation_rejected",
     "output": f"{__name__}.process_output",
+    "release_expired_locks": f"{__name__}.release_expired_locks",
 }
+
+
+def release_expired_locks(
+    annotation_type: str = "text",
+    lock_expiry_minutes: int = 120,
+    **kwargs
+):
+    """
+    Release expired locks on resources and annotation tasks.
+    
+    This job should be scheduled to run periodically (e.g., every 5-10 minutes)
+    via RQ scheduler or cron.
+    
+    Releases locks that have been held longer than lock_expiry_minutes.
+    This prevents resources from being stuck in "locked" state if an
+    annotator's session ends unexpectedly.
+    
+    Args:
+        annotation_type: Type of annotation ('text', 'image')
+        lock_expiry_minutes: Lock expiry threshold in minutes (default: 120 = 2 hours)
+    """
+    from datetime import timedelta
+    
+    db = _get_db()
+    expiry_threshold = datetime.utcnow() - timedelta(minutes=lock_expiry_minutes)
+    
+    released_tasks = 0
+    released_resources = 0
+    
+    try:
+        # Release expired annotation task locks
+        from app.annotations.shared.task_models import AnnotationTask
+        
+        expired_tasks = db.query(AnnotationTask).filter(
+            AnnotationTask.status == 'locked',
+            AnnotationTask.lock_expires_at < datetime.utcnow()
+        ).all()
+        
+        for task in expired_tasks:
+            task.status = 'available'
+            task.annotator_id = None
+            task.locked_at = None
+            task.lock_expires_at = None
+            released_tasks += 1
+            logger.info(f"Released expired task lock: task_id={task.id}")
+        
+        db.commit()
+        
+        # Release expired resource locks (text resources)
+        if annotation_type == "text":
+            from app.annotations.text.models import TextResource
+            
+            expired_resources = db.query(TextResource).filter(
+                TextResource.pool_status == 'locked',
+                TextResource.locked_at < expiry_threshold
+            ).all()
+            
+            for resource in expired_resources:
+                resource.pool_status = 'available'
+                resource.locked_by_user_id = None
+                resource.locked_at = None
+                released_resources += 1
+                logger.info(f"Released expired resource lock: resource_id={resource.id}")
+            
+            db.commit()
+        
+        # Release expired resource locks (image resources)
+        elif annotation_type == "image":
+            from app.annotations.image.models import ImageResource
+            
+            expired_resources = db.query(ImageResource).filter(
+                ImageResource.pool_status == 'locked',
+                ImageResource.locked_at < expiry_threshold
+            ).all()
+            
+            for resource in expired_resources:
+                resource.pool_status = 'available'
+                resource.locked_by_user_id = None
+                resource.locked_at = None
+                released_resources += 1
+                logger.info(f"Released expired image resource lock: resource_id={resource.id}")
+            
+            db.commit()
+        
+        logger.info(
+            f"[release_expired_locks] Released {released_tasks} task locks, "
+            f"{released_resources} resource locks for {annotation_type}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to release expired locks: {e}")
+        db.rollback()
+    finally:
+        db.close()
+    
+    return {
+        "released_tasks": released_tasks,
+        "released_resources": released_resources,
+        "annotation_type": annotation_type
+    }
 
 
 def get_task_function_path(task_type: str) -> Optional[str]:

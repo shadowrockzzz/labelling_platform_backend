@@ -23,6 +23,7 @@ class AnnotationStatusEnum(str, Enum):
     """Status options for annotations."""
     DRAFT = "draft"
     SUBMITTED = "submitted"
+    IN_REVIEW = "in_review"
     APPROVED = "approved"
     REJECTED = "rejected"
 

@@ -6,6 +6,8 @@ from app.core.database import Base, engine
 from app.api.v1 import users, projects, datasets, annotations, auth, assignments
 from app.annotations.text.router import router as text_annotation_router
 from app.annotations.image.router import router as image_annotation_router
+from app.annotations.text.task_router import router as text_task_router
+from app.annotations.image.task_router import router as image_task_router
 
 # For dev: create tables automatically
 Base.metadata.create_all(bind=engine)
@@ -30,6 +32,8 @@ app.include_router(datasets.router, prefix=settings.API_V1_STR)
 app.include_router(annotations.router, prefix=settings.API_V1_STR)
 app.include_router(text_annotation_router, prefix=f"{settings.API_V1_STR}/annotations/text", tags=["Text Annotations"])
 app.include_router(image_annotation_router, prefix=f"{settings.API_V1_STR}/annotations/image", tags=["Image Annotations"])
+app.include_router(text_task_router, prefix=f"{settings.API_V1_STR}/annotations/text", tags=["Text Annotation Tasks"])
+app.include_router(image_task_router, prefix=f"{settings.API_V1_STR}/annotations/image", tags=["Image Annotation Tasks"])
 
 # Global exception handlers
 @app.exception_handler(Exception)
