@@ -276,6 +276,57 @@ def get_annotation(db: Session, annotation_id: int) -> Optional[TextAnnotation]:
     return db.query(TextAnnotation).filter(TextAnnotation.id == annotation_id).first()
 
 
+# Aliases for review router compatibility
+def get_annotation_by_id(db: Session, annotation_id: int) -> Optional[TextAnnotation]:
+    """Get an annotation by ID (alias for get_annotation)."""
+    return get_annotation(db, annotation_id)
+
+
+def get_resource_for_annotation(db: Session, annotation_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get the resource data for an annotation.
+    
+    Returns a dict with resource info for the review workspace.
+    """
+    annotation = get_annotation(db, annotation_id)
+    if not annotation:
+        return None
+    
+    resource = get_resource(db, annotation.resource_id)
+    if not resource:
+        return None
+    
+    return {
+        "id": resource.id,
+        "name": resource.name,
+        "source_type": resource.source_type,
+        "content_preview": resource.content_preview,
+        "status": resource.status,
+        "pool_status": resource.pool_status,
+        "created_at": resource.created_at.isoformat() if resource.created_at else None
+    }
+
+
+def update_annotation_data(db: Session, annotation_id: int, annotation_data: Dict[str, Any]) -> Optional[TextAnnotation]:
+    """
+    Update the annotation_data field of an annotation.
+    
+    Used by reviewers to directly edit annotation content.
+    """
+    annotation = get_annotation(db, annotation_id)
+    if not annotation:
+        return None
+    
+    annotation.annotation_data = annotation_data
+    
+    from datetime import datetime
+    annotation.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(annotation)
+    return annotation
+
+
 def list_annotations(
     db: Session,
     project_id: int,

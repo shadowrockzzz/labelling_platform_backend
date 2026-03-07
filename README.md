@@ -1,338 +1,177 @@
-# LabelBox Clone Backend
+# Data Annotation Platform - Backend
 
-A FastAPI-based backend for an annotation platform with role-based authentication and team management.
+A FastAPI-based backend for a multi-role data annotation platform supporting text and image annotation with multi-level review workflow.
 
 ## Features
 
-- **Role-Based Access Control (RBAC)**
-  - Admin: Full system access, user management, project management
-  - Project Manager: Create/manage assigned projects, assign team members
-  - Reviewer: Review and approve/reject annotations
-  - Annotator: Create and submit annotations
-
-- **JWT Authentication**
-  - Access tokens (15 minute expiry)
-  - Refresh tokens (7 day expiry)
-  - Secure password hashing with bcrypt
-
-- **Project Management**
-  - Create, read, update, delete projects
-  - Team member assignments (managers, reviewers, annotators)
-  - Project status tracking (active, completed, archived)
-  - Custom labels for text annotation projects
-  - Label configuration with hex colors
-  - Support for multiple annotation sub-types (NER, POS, Sentiment, etc.)
-
-- **Team Management**
-  - Assign 0 to unlimited reviewers per project
-  - Assign annotators to projects
-  - View team composition by role
+- **Multi-Role System**: Admin, Project Manager, Reviewer, Annotator
+- **Multi-Level Review Workflow**: Configurable review chain with multiple reviewer levels
+- **Resource Pool Management**: PM-provided or annotator-provided resources with locking
+- **Text Annotation**: Span-based annotations with labels
+- **Image Annotation**: Bounding boxes, polygons, keypoints, segmentation
+- **Task Assignment System**: Annotation and review task management
+- **Background Job Processing**: Redis Queue (RQ) for async tasks
 
 ## Tech Stack
 
-- **Framework**: FastAPI 0.104.1
-- **Database**: PostgreSQL with SQLAlchemy 2.0.23
-- **Authentication**: JWT with python-jose
-- **Password Hashing**: bcrypt via passlib
-- **API Documentation**: Auto-generated with Swagger/OpenAPI
+- **Framework**: FastAPI (Python 3.12)
+- **Database**: PostgreSQL with SQLAlchemy ORM
+- **Cache/Queue**: Redis + RQ
+- **Storage**: MinIO (S3-compatible)
 
-## Installation
+## Quick Start
 
-### Prerequisites
+### 1. Install Dependencies
 
-- Python 3.9+
-- PostgreSQL 12+
-- pip or poetry
+```bash
+pip install -r requirements.txt
+```
 
-### Setup Steps
+### 2. Configure Environment
 
-1. **Clone the repository**
-   ```bash
-   cd labelling_platform_backend
-   ```
+Copy `.env.example` to `.env` and configure:
 
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/labelling_platform
+REDIS_URL=redis://localhost:6379/0
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=minioadmin
+MINIO_SECRET_KEY=minioadmin
+SECRET_KEY=your-secret-key-here
+```
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 3. Initialize Database
 
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your database credentials and secret key
-   ```
+**WARNING**: This will drop all existing tables and recreate them.
 
-5. **Generate SECRET_KEY** (if not set)
-   ```bash
-   openssl rand -hex 32
-   ```
+```bash
+cd labelling_platform_backend
+python init_database.py
+```
 
-6. **Run database migration**
-   ```bash
-   python migration.py
-   ```
+Options:
+- `--no-drop` or `--keep-data`: Add missing tables without dropping existing ones
+- `--help`: Show help message
 
-7. **Start the server**
-   ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-   ```
+### 4. Run the Server
 
-The API will be available at `http://localhost:8000`
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
 
-## API Documentation
+### 5. Run Background Worker (Optional)
 
-Once the server is running, visit:
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
+```bash
+python run_worker.py
+```
 
 ## Database Schema
 
-### Users Table
-- `id`: Primary key
-- `email`: Unique email address
-- `hashed_password`: Bcrypt hashed password
-- `full_name`: User's full name (optional)
-- `role`: One of: admin, project_manager, reviewer, annotator
-- `is_active`: Account status
-- `created_at`: Account creation timestamp
-- `modified_at`: Last update timestamp
+### Core Tables
+- `users` - User accounts with roles (admin, project_manager, reviewer, annotator)
+- `projects` - Annotation projects with configuration
+- `labels` - Project-specific labels for annotations
+- `project_assignments` - Team assignments with review levels
 
-### Projects Table
-- `id`: Primary key
-- `name`: Project name
-- `description`: Project description (optional)
-- `owner_id`: Foreign key to users table
-- `status`: One of: active, completed, archived
-- `annotation_type`: Type of annotation (text, image, audio, video)
-- `config`: JSON configuration including custom labels (for text annotation)
-- `created_at`: Project creation timestamp
-- `modified_at`: Last update timestamp
+### Resource Tables
+- `text_resources` - Text files for annotation with pool status
+- `image_resources` - Images for annotation with pool status
 
-### Project Assignments Table
-- `id`: Primary key
-- `project_id`: Foreign key to projects table
-- `user_id`: Foreign key to users table
-- `role`: One of: project_manager, reviewer, annotator
-- `created_at`: Assignment creation timestamp
+### Annotation Tables
+- `text_annotations` - Text annotations with review workflow
+- `image_annotations` - Image annotations with review workflow
 
-## API Endpoints
+### Task Tables
+- `annotation_tasks` - Resource pool task assignments
+- `review_tasks` - Review task assignments by level
 
-### Authentication (`/api/v1/auth`)
+### Audit Tables
+- `text_annotation_queue` - Annotation event log
+- `image_annotation_queue` - Annotation event log
+- `text_review_corrections` - Review correction history
+- `image_review_corrections` - Review correction history
 
-- `POST /login` - Login and get JWT tokens
-- `POST /refresh` - Refresh access token
-- `POST /logout` - Logout (client-side token discard)
-- `GET /me` - Get current user info
-- `POST /register` - Register new user (Admin only)
+## API Structure
 
-### Users (`/api/v1/users`)
-
-- `GET /` - List all users (Admin only)
-- `GET /{id}` - Get user details (Admin/Manager)
-- `PUT /{id}` - Update user (Admin only)
-- `DELETE /{id}` - Deactivate user (Admin only)
-- `PUT /{id}/role` - Change user role (Admin only)
-- `PUT /{id}/activate` - Activate deactivated user (Admin only)
-
-### Projects (`/api/v1/projects`)
-
-- `GET /` - List projects (filtered by user role)
-- `POST /` - Create project (Admin/Manager)
-  - Supports custom labels for text annotation
-  - Configurable label names and colors
-  - Multiple annotation sub-types supported
-- `GET /{id}` - Get project details
-  - Includes custom label configuration
-- `PUT /{id}` - Update project (Admin/Manager or owner)
-  - Update label configuration
-- `DELETE /{id}` - Delete project (Admin only)
-
-### Project Assignments (`/api/v1`)
-
-- `GET /projects/{id}/team` - Get project team
-- `POST /projects/{id}/reviewers` - Add reviewers
-- `DELETE /projects/{id}/reviewers/{user_id}` - Remove reviewer
-- `POST /projects/{id}/annotators` - Add annotators
-- `DELETE /projects/{id}/annotators/{user_id}` - Remove annotator
-
-## Password Requirements
-
-Passwords must meet the following criteria:
-- Minimum 8 characters
-- At least 1 uppercase letter
-- At least 1 number
-- At least 1 special character
-
-## Role Hierarchy
-
-1. **Admin** (highest privilege)
-   - Full system access
-   - Create/manage all users
-   - Create/manage all projects
-   - Assign project managers
-   - Configure system settings
-
-2. **Project Manager**
-   - Create/manage assigned projects
-   - Assign annotators to projects
-   - Assign 0 to unlimited reviewers per project
-   - View project analytics
-   - Cannot manage other managers or admins
-
-3. **Reviewer** (0 to unlimited per project)
-   - Review submitted annotations
-   - Approve/reject annotations
-   - Add review comments
-   - View project details (read-only)
-
-4. **Annotator**
-   - Create new annotations
-   - Edit own annotations (before review)
-   - View assigned projects
-   - Submit annotations for review
-
-## Security Best Practices
-
-1. **Never commit `.env` file** - Use `.env.example` as template
-2. **Use strong SECRET_KEY** - Generate with `openssl rand -hex 32`
-3. **Set DEBUG=False** in production
-4. **Use HTTPS** in production
-5. **Rotate refresh tokens** - Implement token blacklist in production
-6. **Validate all inputs** - Pydantic models handle most validation
-7. **Rate limiting** - Implement for auth endpoints in production
-
-## Error Response Format
-
-All API responses follow this format:
-
-**Success:**
-```json
-{
-  "success": true,
-  "data": { ... }
-}
+```
+/api/v1/auth          - Authentication endpoints
+/api/v1/users         - User management (admin)
+/api/v1/projects      - Project CRUD
+/api/v1/assignments   - Team assignments
+/api/v1/annotations/text/projects/{id}/...    - Text annotation
+/api/v1/annotations/image/projects/{id}/...   - Image annotation
+/api/v1/review/text/projects/{id}/...         - Text review tasks
+/api/v1/review/image/projects/{id}/...        - Image review tasks
+/api/v1/tasks/text/projects/{id}/...          - Text annotation tasks
+/api/v1/tasks/image/projects/{id}/...         - Image annotation tasks
 ```
 
-**Error:**
-```json
-{
-  "success": false,
-  "error": "Error message",
-  "details": { ... }
-}
+## User Roles
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | Full system access, user management |
+| `project_manager` | Create/manage projects, team assignment |
+| `reviewer` | Review annotations at assigned level |
+| `annotator` | Create and submit annotations |
+
+## Review Workflow
+
+1. Annotator creates annotation → Status: `draft`
+2. Annotator submits → Status: `submitted`, goes to reviewer level 1
+3. Reviewer approves → Goes to next level (or `approved` if final level)
+4. Reviewer rejects → Goes back to previous level (or `rejected` if level 1)
+
+### Annotation Statuses
+- `draft` - Being created by annotator
+- `submitted` - Submitted for review
+- `approved` - Approved by all reviewers
+- `rejected` - Rejected, needs correction
+
+## Resource Pool
+
+Projects can be configured for:
+- **Annotator-provided resources**: Annotators upload their own files
+- **PM-provided resources**: PM uploads resources to a shared pool
+
+Pool statuses:
+- `available` - Ready to be claimed
+- `locked` - Claimed by a user
+- `completed` - Annotation completed
+- `skipped` - Skipped by user
+
+## Project Structure
+
 ```
-
-## Testing
-
-Run tests (when implemented):
-```bash
-pytest
+labelling_platform_backend/
+├── app/
+│   ├── api/v1/           # API route handlers
+│   ├── annotations/      # Annotation modules (text, image, shared)
+│   ├── core/             # Config, database, security
+│   ├── crud/             # Database CRUD operations
+│   ├── models/           # SQLAlchemy models
+│   ├── schemas/          # Pydantic schemas
+│   ├── services/         # Business logic services
+│   ├── utils/            # Utilities
+│   └── workers/          # Background task workers
+├── docs/                 # Documentation
+├── init_database.py      # Database initialization script
+└── requirements.txt      # Python dependencies
 ```
 
 ## Docker Deployment
 
-Build and run with Docker:
 ```bash
-docker build -t labelling-platform-backend .
-docker run -p 8000:8000 --env-file .env labelling-platform-backend
+docker-compose up -d
 ```
 
-## Documentation
-
-- [Custom Labels Feature](docs/CUSTOM_LABELS_FEATURE.md) - Detailed guide for custom labels in text annotation
-- [Annotation Fixes Summary](docs/ANNOTATION_FIXES_SUMMARY.md) - Summary of bug fixes and improvements
-- [Getting Started Guide](docs/GETTING_STARTED.md) - Quick start guide
-- [Setup Guide](docs/SETUP_GUIDE.md) - Detailed setup instructions
-- [S3 Setup Guide](docs/S3_SETUP_GUIDE.md) - AWS S3 integration setup
-- [Bug Fix Log](docs/BUG_FIX_LOG.md) - History of bug fixes
-
-## Troubleshooting
-
-### Database Connection Issues
-- Ensure PostgreSQL is running
-- Check DATABASE_URL in .env file
-- Verify database user has proper permissions
-
-### Annotation Issues
-- If you encounter 500 errors when creating annotations, see [Annotation Fixes Summary](docs/ANNOTATION_FIXES_SUMMARY.md)
-- For CORS errors, restart the backend server
-- For permission errors (403), ensure user has proper role assignment
-
-### Import Errors
-- Ensure virtual environment is activated
-- Reinstall dependencies: `pip install -r requirements.txt`
-
-### Migration Failures
-- Check database connection
-- Review migration script output
-- Manually apply changes if needed
-
-## Development
-
-### Adding New Endpoints
-
-1. Create route handler in `app/api/v1/`
-2. Create service logic in `app/services/`
-3. Create CRUD operations in `app/crud/`
-4. Define schemas in `app/schemas/`
-5. Update `app/main.py` to include new router
-
-### Custom Labels Feature
-
-The backend supports custom labels for text annotation projects:
-
-**Config Structure:**
-```json
-{
-  "textSubType": "ner",
-  "useCustomLabels": true,
-  "customLabels": [
-    {"name": "PERSON", "color": "#3B82F6"},
-    {"name": "ORGANIZATION", "color": "#10B981"}
-  ]
-}
-```
-
-**Supported Sub-Types:**
-- `ner` - Named Entity Recognition
-- `pos` - Part-of-Speech Tagging
-- `sentiment` - Sentiment Analysis
-- `span` - Span Annotation
-- `relation` - Relation Extraction
-- `classification` - Text Classification
-- `dependency` - Dependency Parsing
-- `coreference` - Coreference Resolution
-
-**Label Validation:**
-- 1-20 labels per project
-- Label names: 1-50 characters, unique (case-insensitive)
-- Colors: Hex format (#RRGGBB)
-
-See [docs/CUSTOM_LABELS_FEATURE.md](docs/CUSTOM_LABELS_FEATURE.md) for detailed documentation.
-
-### Code Structure
-
-```
-app/
-├── api/v1/          # API route handlers
-├── core/             # Configuration and security
-├── crud/             # Database operations
-├── models/           # SQLAlchemy models
-├── schemas/          # Pydantic schemas
-├── services/         # Business logic
-└── utils/            # Helper functions
-```
+This starts:
+- PostgreSQL database
+- Redis server
+- MinIO storage
+- API server
+- Background worker
 
 ## License
 
-MIT
-
-## Support
-
-For issues and questions, please open an issue on the repository.
+MIT License

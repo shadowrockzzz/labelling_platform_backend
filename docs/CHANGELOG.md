@@ -1,238 +1,61 @@
-# Changelog
+# Changelog - Backend
 
-All notable changes to the Labelling Platform backend will be documented in this file.
+All notable changes to the backend will be documented in this file.
 
----
+## [2.0.0] - 2026-03-07
 
-## [2026.03.06] - March 6, 2026
+### Major Features Added
 
-### Bug Fixes
+#### Multi-Level Review Workflow
+- Added `review_level` column to `project_assignments` table for reviewer chain ordering
+- Added `current_review_level` column to `text_annotations` and `image_annotations` tables
+- Reviewers can be assigned to specific levels (1, 2, 3, etc.)
+- Annotations flow through review chain: Level 1 → Level 2 → ... → Approved
+- Rejection sends annotation back to previous level (or annotator if Level 1)
 
-#### Resource Pool Lock Synchronization
-- **Fixed:** Lock not being re-acquired after admin releases it
-  - Root cause: Two separate locking mechanisms (`annotation_tasks` and resource `pool_status`) were not synchronized
-  - When admin released a lock via Resource Pool UI, only the resource's `pool_status` was reset
-  - The corresponding `annotation_task` remained locked, preventing annotators from reclaiming the task
-  - **Solution:** Updated `release_resource_lock_endpoint` in both text and image routers to also reset the corresponding `annotation_task`
+#### Resource Pool Management
+- Added `pool_status`, `locked_by_user_id`, `locked_at` columns to resource tables
+- Project config `resource_provider`: "annotator" or "project_manager"
+- PM-provided resources: PM bulk-uploads, annotators claim from pool
+- Resource locking mechanism with expiry (configurable, default 30 minutes)
+- Pool statuses: available, locked, completed, skipped
 
-#### Changed Files
-- `app/annotations/text/router.py` - `release_resource_lock_endpoint` now also releases `annotation_task`
-- `app/annotations/image/router.py` - `release_resource_lock` now also releases `annotation_task`
+#### Task Assignment System
+- New `annotation_tasks` table for resource pool task tracking
+- New `review_tasks` table for review task assignments by level
+- Task status tracking: available, locked, completed
 
-### Technical Details
-When PM/Admin clicks "Release Lock" in Resource Pool UI, the following now happens:
-1. Resource's `pool_status` → `'available'`
-2. Resource's `locked_by_user_id` → `None`
-3. Resource's `locked_at` → `None`
-4. **NEW:** Annotation task's `status` → `'available'`
-5. **NEW:** Annotation task's `annotator_id` → `None`
-6. **NEW:** Annotation task's `locked_at`, `lock_expires_at` → `None`
+#### Review Task Locking
+- Added `locked_by_reviewer_id` and `review_locked_at` to annotation tables
+- Reviewers claim tasks exclusively to prevent conflicts
+- Lock expiry mechanism for abandoned reviews
 
----
+### Database Changes
+- Unified migration script `init_database.py` replaces multiple migration files
+- All tables created with correct schema in single script
+- Comprehensive indexes for performance
 
-## [2026.03.02] - March 2, 2026
+### API Endpoints Added
+- `GET /api/v1/tasks/text/projects/{id}/pool/next` - Get next annotation task
+- `GET /api/v1/tasks/image/projects/{id}/pool/next` - Get next image annotation task
+- `GET /api/v1/review/text/projects/{id}/next` - Get next review task
+- `GET /api/v1/review/image/projects/{id}/next` - Get next image review task
+- `POST /api/v1/review/text/projects/{id}/tasks/{taskId}/approve` - Approve review
+- `POST /api/v1/review/text/projects/{id}/tasks/{taskId}/reject` - Reject review
 
-### Bug Fixes
+### Removed
+- Deleted individual migration files (consolidated into `init_database.py`)
+- Removed `seed_existing_tasks.py` (functionality integrated)
 
-#### Database Schema
-- **Fixed:** Missing `review_locked_by` and `review_locked_at` columns in annotation tables
-  - These columns were defined in SQLAlchemy models but missing from the database
-  - Caused 500 Internal Server Error when creating shapes in image annotation
-  - Added migration `migration_add_review_lock_columns.py` to add missing columns
-  - Columns added to both `image_annotations` and `text_annotations` tables
+## [1.0.0] - Initial Release
 
-### Migration
-- `migration_add_review_lock_columns.py` - Adds review lock columns for pool-based review workflow
-
----
-
-## [Unreleased]
-
-### Added
-- Comprehensive documentation restructure
-
-### Changed
-- **Reviewer Edit Permissions**: Reviewers can now directly edit annotations (both text and image)
-  - Previously, only the original annotator could edit their annotations
-  - Reviewers can now update shapes, spans, and full annotations
-  - When a reviewer edits an annotation, the status is reset to draft for re-review workflow
-
----
-
-## [2026.03] - March 2026
-
-### Added
-
-#### Redis Queue System
-- **Redis-backed job queue** using `rq` (Redis Queue)
-- **Unified AnnotationQueue class** supporting all annotation types (text, image)
-- **PostgreSQL audit logging** for all queue operations
-- **Docker Compose integration** for Redis and rq-worker services
-- **Management commands** for running background workers
-
-#### New Files
-- `app/core/redis_client.py` - Generic Redis connection manager
-- `app/core/queue.py` - Unified `AnnotationQueue` class
-- `app/workers/annotation_tasks.py` - rq job functions
-- `run_worker.py` - Script to start rq workers
-
-#### Configuration
-- Added `REDIS_URL` environment variable
-- Added `rq` and `redis` to requirements.txt
-- Added `rq_job_id` column to queue tables
-
-#### Docker Services
-- `redis` - Redis server container
-- `rq-worker` - Background worker container
-
-### Migration
-- `migration_add_rq_job_id.py` - Adds `rq_job_id` column to text_annotation_queue
-
----
-
-## [2026.02] - February 2026
-
-### Bug Fixes
-
-#### Text Annotation Fixes
-- **Fixed:** Single-span text annotations not saving correctly
-- **Fixed:** Batch annotation validation allowing overlapping spans
-- **Fixed:** Edit annotation form not loading existing spans
-- **Fixed:** Review panel not displaying annotation data
-
-#### Image Annotation Fixes
-- **Fixed:** Bounding box coordinates not persisting
-- **Fixed:** Polygon points not saving correctly
-- **Fixed:** Image upload failing for large files
-- **Fixed:** Shape deletion not working in edit mode
-
-#### Authentication Fixes
-- **Fixed:** Token refresh not returning new refresh token
-- **Fixed:** Password validation too strict
-- **Fixed:** User activation endpoint not working
-
-#### General Fixes
-- **Fixed:** CORS errors with frontend
-- **Fixed:** Database connection pooling issues
-- **Fixed:** S3 upload timeout for large files
-
----
-
-## [2026.01] - January 2026
-
-### Added
-
-#### Review Corrections Feature
-- Reviewers can suggest corrections to annotations
-- Annotators can accept or reject corrections
-- Full audit trail of all correction attempts
-- New `review_corrections` table and endpoints
-
-#### Single Annotation Model
-- Migrated from multi-record to single-annotation model
-- One annotation per resource with multiple spans/shapes
-- Improved performance with fewer database queries
-- Atomic save operations
-
-#### Image Annotation System
-- Bounding box annotations
-- Polygon annotations
-- Keypoint annotations
-- Segmentation mask support
-- S3 storage for images
-
-#### Custom Labels
-- Project-specific custom labels
-- Custom colors for labels
-- Label palette component
-
-### Changed
-
-#### Annotation Schema
-- Added `annotation_sub_type` field
-- Changed from individual span records to array of spans
-- Added `shapes` field for image annotations
-
-#### Project Configuration
-- Added `config` JSON field for dynamic settings
-- Support for `textSubType`, `classificationType`, `customLabels`
-
-### Fixed
-
-#### Annotation Editing
-- Fixed editing reviewed annotations now resets status to draft
-- Fixed clearing review fields when editing
-- Fixed annotation version tracking
-
----
-
-## [2025.12] - December 2025
-
-### Added
-
-#### Text Annotation System
-- Named Entity Recognition (NER)
-- Part-of-Speech Tagging (POS)
-- Sentiment Analysis
-- Document Classification
-- Relation Extraction
-- Span Labeling
-- Dependency Parsing
-- Coreference Resolution
-
-#### Batch Workflow
-- Accumulate multiple spans locally
-- Submit all spans in one request
-- Validation for overlapping spans
-
-#### Queue System
-- Task queue for asynchronous processing
-- Queue isolation by project and annotation type
-- Status tracking for queue items
-
-#### User Management
+### Features
+- User authentication with JWT tokens
 - Role-based access control (admin, project_manager, reviewer, annotator)
-- User activation/deactivation
-- Profile management
-
-#### Project Management
-- Create, update, delete projects
-- Project assignments
-- Project configuration
-
-### Security
-
-#### Authentication
-- JWT-based authentication
-- Access and refresh tokens
-- Token expiration and renewal
-
-#### Authorization
-- Role-based route protection
-- Project-level permissions
-- Annotation ownership validation
-
----
-
-## Migration History
-
-| Migration | Description |
-|-----------|-------------|
-| `migration.py` | Initial database schema |
-| `migration_add_config.py` | Added project config field |
-| `migration_add_annotation_sub_type.py` | Added annotation_sub_type |
-| `migration_add_image_annotation.py` | Image annotation tables |
-| `migration_add_review_corrections.py` | Review corrections table |
-| `migration_add_rq_job_id.py` | Added rq_job_id for Redis queue |
-| `migration_add_review_lock_columns.py` | Added review_locked_by/at columns (2026.03.02) |
-
----
-
-## Version History
-
-| Version | Date | Description |
-|---------|------|-------------|
-| 2026.03 | Mar 2026 | Redis queue system |
-| 2026.02 | Feb 2026 | Bug fixes and stability |
-| 2026.01 | Jan 2026 | Major features (review, image) |
-| 2025.12 | Dec 2025 | Initial release |
+- Project management with labels configuration
+- Team assignments
+- Text annotation with span-based labeling
+- Image annotation with bounding boxes, polygons, keypoints, segmentation
+- Single-level review workflow
+- MinIO/S3 storage integration
+- Redis Queue for background tasks

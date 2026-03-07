@@ -1085,10 +1085,11 @@ def get_next_pool_resource(
     """
     Get the next available resource from the pool for annotation.
     
-    Locks the resource to the current user.
+    Locks the resource to the current user and synchronizes with annotation_task.
     """
     from app.models.project import Project
-    from datetime import datetime
+    from app.annotations.shared.task_models import AnnotationTask
+    from datetime import datetime, timedelta
     
     # Check project configuration
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -1110,6 +1111,24 @@ def get_next_pool_resource(
             detail="Not authorized to annotate in this project"
         )
     
+    # Check if user already has a locked task in this project
+    existing_task = db.query(AnnotationTask).filter(
+        AnnotationTask.project_id == project_id,
+        AnnotationTask.resource_type == 'image',
+        AnnotationTask.annotator_id == current_user.id,
+        AnnotationTask.status == 'locked'
+    ).first()
+    
+    if existing_task:
+        # Return the existing locked resource
+        resource = crud.get_image_resource(db, existing_task.resource_id)
+        if resource:
+            return {
+                "success": True,
+                "data": add_urls_to_resource(resource),
+                "message": "Resumed your existing locked task"
+            }
+    
     resource = crud.get_next_available_resource(db, project_id)
     if not resource:
         return {
@@ -1122,12 +1141,40 @@ def get_next_pool_resource(
     resource.pool_status = 'locked'
     resource.locked_by_user_id = current_user.id
     resource.locked_at = datetime.utcnow()
+    
+    # Also lock the corresponding annotation_task
+    task = db.query(AnnotationTask).filter(
+        AnnotationTask.project_id == project_id,
+        AnnotationTask.resource_id == resource.id,
+        AnnotationTask.resource_type == 'image'
+    ).first()
+    
+    if task:
+        task.status = 'locked'
+        task.annotator_id = current_user.id
+        task.locked_at = datetime.utcnow()
+        task.lock_expires_at = datetime.utcnow() + timedelta(hours=2)
+        db.add(task)
+    else:
+        # Create a new task if it doesn't exist
+        task = AnnotationTask(
+            project_id=project_id,
+            resource_id=resource.id,
+            resource_type='image',
+            status='locked',
+            annotator_id=current_user.id,
+            locked_at=datetime.utcnow(),
+            lock_expires_at=datetime.utcnow() + timedelta(hours=2)
+        )
+        db.add(task)
+    
     db.commit()
     db.refresh(resource)
     
     return {
         "success": True,
-        "data": add_urls_to_resource(resource)
+        "data": add_urls_to_resource(resource),
+        "message": "Resource locked for annotation"
     }
 
 
@@ -1221,8 +1268,10 @@ def skip_pool_resource(
 ):
     """
     Skip a resource, returning it to the pool and getting the next one.
+    Also synchronizes the corresponding annotation_task records.
     """
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    from app.annotations.shared.task_models import AnnotationTask
     
     resource = crud.get_image_resource(db, resource_id)
     if not resource or resource.project_id != project_id:
@@ -1237,10 +1286,27 @@ def skip_pool_resource(
             detail="You don't have this resource locked"
         )
     
-    # Release the lock
+    # Release the lock on the resource
     resource.pool_status = 'available'
     resource.locked_by_user_id = None
     resource.locked_at = None
+    
+    # Also release the corresponding annotation_task
+    task = db.query(AnnotationTask).filter(
+        AnnotationTask.project_id == project_id,
+        AnnotationTask.resource_id == resource_id,
+        AnnotationTask.resource_type == 'image',
+        AnnotationTask.annotator_id == current_user.id
+    ).first()
+    
+    if task:
+        task.status = 'available'
+        task.annotator_id = None
+        task.locked_at = None
+        task.lock_expires_at = None
+        task.skipped_count = (task.skipped_count or 0) + 1
+        db.add(task)
+    
     db.commit()
     
     # Get next available resource
@@ -1249,6 +1315,33 @@ def skip_pool_resource(
         next_resource.pool_status = 'locked'
         next_resource.locked_by_user_id = current_user.id
         next_resource.locked_at = datetime.utcnow()
+        
+        # Also lock the corresponding annotation_task for the next resource
+        next_task = db.query(AnnotationTask).filter(
+            AnnotationTask.project_id == project_id,
+            AnnotationTask.resource_id == next_resource.id,
+            AnnotationTask.resource_type == 'image'
+        ).first()
+        
+        if next_task:
+            next_task.status = 'locked'
+            next_task.annotator_id = current_user.id
+            next_task.locked_at = datetime.utcnow()
+            next_task.lock_expires_at = datetime.utcnow() + timedelta(hours=2)
+            db.add(next_task)
+        else:
+            # Create a new task if it doesn't exist
+            next_task = AnnotationTask(
+                project_id=project_id,
+                resource_id=next_resource.id,
+                resource_type='image',
+                status='locked',
+                annotator_id=current_user.id,
+                locked_at=datetime.utcnow(),
+                lock_expires_at=datetime.utcnow() + timedelta(hours=2)
+            )
+            db.add(next_task)
+        
         db.commit()
         db.refresh(next_resource)
         

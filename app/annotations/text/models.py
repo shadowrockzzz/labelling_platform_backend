@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, JSON, Text, Index
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import uuid
@@ -66,6 +67,12 @@ class TextAnnotation(Base):
     # Review locking for pool mode
     review_locked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     review_locked_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # UUID tracking for annotation and review chain
+    annotator_task_id = Column(UUID(as_uuid=True), nullable=True)  # Links to AnnotationTask
+    review_chain = Column(JSONB, default=list)  # List of review actions with UUIDs and user IDs
+    final_output_uuid = Column(UUID(as_uuid=True), nullable=True)  # Generated when fully approved
+    final_output_data = Column(JSONB, nullable=True)  # Final approved annotation with all metadata
 
     # Relationships
     resource = relationship("TextResource", back_populates="annotations")

@@ -270,6 +270,64 @@ def get_image_annotation(db: Session, annotation_id: int) -> Optional[ImageAnnot
     return db.query(ImageAnnotation).filter(ImageAnnotation.id == annotation_id).first()
 
 
+# Aliases for review router compatibility
+def get_annotation_by_id(db: Session, annotation_id: int) -> Optional[ImageAnnotation]:
+    """Get image annotation by ID (alias for get_image_annotation)."""
+    return get_image_annotation(db, annotation_id)
+
+
+def get_resource_for_annotation(db: Session, annotation_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Get the resource data for an annotation.
+    
+    Returns a dict with resource info for the review workspace.
+    """
+    annotation = get_image_annotation(db, annotation_id)
+    if not annotation:
+        return None
+    
+    resource = get_image_resource(db, annotation.resource_id)
+    if not resource:
+        return None
+    
+    # Get presigned URLs for display
+    resource_dict = add_urls_to_resource(resource)
+    
+    return {
+        "id": resource.id,
+        "name": resource.name,
+        "width": resource.width,
+        "height": resource.height,
+        "mime_type": resource.mime_type,
+        "source_type": resource.source_type,
+        "image_url": resource_dict.get('image_url'),
+        "thumbnail_url": resource_dict.get('thumbnail_url'),
+        "pool_status": getattr(resource, 'pool_status', None),
+        "created_at": resource.created_at.isoformat() if resource.created_at else None
+    }
+
+
+def update_annotation_data(db: Session, annotation_id: int, annotation_data: Dict[str, Any]) -> Optional[ImageAnnotation]:
+    """
+    Update the annotation_data field of an annotation.
+    
+    Used by reviewers to directly edit annotation content.
+    """
+    annotation = get_image_annotation(db, annotation_id)
+    if not annotation:
+        return None
+    
+    from sqlalchemy.orm.attributes import flag_modified
+    
+    annotation.annotation_data = annotation_data
+    annotation.modified_at = datetime.utcnow()
+    flag_modified(annotation, 'annotation_data')
+    
+    db.commit()
+    db.refresh(annotation)
+    return annotation
+
+
 def get_image_annotations(
     db: Session,
     project_id: int,

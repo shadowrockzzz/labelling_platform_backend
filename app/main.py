@@ -8,6 +8,10 @@ from app.annotations.text.router import router as text_annotation_router
 from app.annotations.image.router import router as image_annotation_router
 from app.annotations.text.task_router import router as text_task_router
 from app.annotations.image.task_router import router as image_task_router
+from app.annotations.text import crud as text_crud
+from app.annotations.image import crud as image_crud
+from app.annotations.shared.review_router import create_review_router
+from app.crud.assignment import get_max_review_level
 
 # For dev: create tables automatically
 Base.metadata.create_all(bind=engine)
@@ -34,6 +38,27 @@ app.include_router(text_annotation_router, prefix=f"{settings.API_V1_STR}/annota
 app.include_router(image_annotation_router, prefix=f"{settings.API_V1_STR}/annotations/image", tags=["Image Annotations"])
 app.include_router(text_task_router, prefix=f"{settings.API_V1_STR}/annotations/text", tags=["Text Annotation Tasks"])
 app.include_router(image_task_router, prefix=f"{settings.API_V1_STR}/annotations/image", tags=["Image Annotation Tasks"])
+
+# Create and include review routers for text and image annotations
+# Text review router
+text_review_router = create_review_router(
+    annotation_type="text",
+    get_annotation_by_id_func=text_crud.get_annotation_by_id,
+    get_resource_by_annotation_func=text_crud.get_resource_for_annotation,
+    update_annotation_func=text_crud.update_annotation_data,
+    get_max_review_level_func=get_max_review_level
+)
+app.include_router(text_review_router, prefix=f"{settings.API_V1_STR}/annotations/text", tags=["Text Review Tasks"])
+
+# Image review router
+image_review_router = create_review_router(
+    annotation_type="image",
+    get_annotation_by_id_func=image_crud.get_annotation_by_id,
+    get_resource_by_annotation_func=image_crud.get_resource_for_annotation,
+    update_annotation_func=image_crud.update_annotation_data,
+    get_max_review_level_func=get_max_review_level
+)
+app.include_router(image_review_router, prefix=f"{settings.API_V1_STR}/annotations/image", tags=["Image Review Tasks"])
 
 # Global exception handlers
 @app.exception_handler(Exception)
