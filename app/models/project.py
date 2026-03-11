@@ -18,7 +18,7 @@ class Project(Base):
 
     # Relationships
     owner = relationship("User", back_populates="owned_projects", lazy="joined")
-    datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
+    # Note: datasets relationship removed - not actively used (legacy model)
     assignments = relationship("ProjectAssignment", back_populates="project", cascade="all, delete-orphan")
 
     def __repr__(self):

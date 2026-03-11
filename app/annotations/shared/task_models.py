@@ -2,7 +2,7 @@
 SQLAlchemy model for annotation tasks.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Index
 from sqlalchemy.dialects.postgresql import UUID
@@ -40,8 +40,8 @@ class AnnotationTask(Base):
     annotation_id = Column(Integer, nullable=True)  # FK to annotation once created
     skipped_count = Column(Integer, default=0)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     project = relationship("Project", backref="annotation_tasks")
@@ -66,19 +66,19 @@ class AnnotationTask(Base):
     @property
     def is_locked(self) -> bool:
         """Check if task is currently locked."""
-        return self.status == 'locked' and self.lock_expires_at and self.lock_expires_at > datetime.utcnow()
+        return self.status == 'locked' and self.lock_expires_at and self.lock_expires_at > datetime.now(timezone.utc)
     
     @property
     def is_expired(self) -> bool:
         """Check if lock has expired."""
         if self.lock_expires_at is None:
             return False
-        return self.status == 'locked' and self.lock_expires_at < datetime.utcnow()
+        return self.status == 'locked' and self.lock_expires_at < datetime.now(timezone.utc)
     
     def lock(self, annotator_id: int, lock_duration_hours: int = 2):
         """Lock the task to an annotator."""
         from datetime import timedelta
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         self.annotator_id = annotator_id
         self.status = 'locked'
         self.locked_at = now

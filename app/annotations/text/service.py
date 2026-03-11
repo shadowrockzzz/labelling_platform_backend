@@ -459,9 +459,11 @@ def submit_annotation_service(
     2. Validate status
     3. Update status to 'in_review', set current_review_level = 1
     4. Assign level-1 reviewer
-    5. Enqueue task
+    5. Create ReviewTask for level 1
+    6. Enqueue task
     """
     from app.crud.assignment import get_reviewer_for_level, get_max_review_level
+    from app.annotations.shared.review_crud import get_or_create_review_task
     
     annotation = get_annotation(db, annotation_id)
     if not annotation:
@@ -517,6 +519,16 @@ def submit_annotation_service(
     annotation.submitted_at = datetime.now()
     db.commit()
     db.refresh(annotation)
+    
+    # Create ReviewTask for level 1 - THIS IS THE KEY FIX
+    review_task = get_or_create_review_task(
+        db=db,
+        project_id=annotation.project_id,
+        annotation_id=annotation.id,
+        annotation_type="text",
+        review_level=1
+    )
+    logger.info(f"Created ReviewTask {review_task.id} for annotation {annotation_id} at level 1")
     
     # Enqueue with annotation_type='text', annotation_sub_type, and annotation_id
     queue = TextQueueStub(db, annotation_type="text")

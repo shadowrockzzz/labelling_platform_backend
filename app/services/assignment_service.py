@@ -72,7 +72,11 @@ def get_project_team(db: Session, project_id: int) -> ProjectTeamResponse:
     )
 
 def add_reviewers(db: Session, project_id: int, user_ids: List[int]) -> dict:
-    """Add multiple reviewers to a project."""
+    """Add multiple reviewers to a project.
+    
+    Reviewers are automatically assigned review_level=1 (first reviewer level).
+    For multi-level review chains, use the /reviewers/with-levels endpoint.
+    """
     # Verify project exists
     project = get_project_by_id(db, project_id=project_id)
     if not project:
@@ -80,6 +84,11 @@ def add_reviewers(db: Session, project_id: int, user_ids: List[int]) -> dict:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
+    
+    # Get existing max review level to determine next level
+    from app.crud.assignment import get_max_review_level
+    max_level = get_max_review_level(db, project_id)
+    next_level = max_level + 1  # New reviewers get the next level
     
     added_count = 0
     for user_id in user_ids:
@@ -93,8 +102,12 @@ def add_reviewers(db: Session, project_id: int, user_ids: List[int]) -> dict:
         if existing:
             continue
         
-        # Create assignment
-        create_assignment(db, project_id, user_id, "reviewer")
+        # Create assignment with review_level
+        # If this is the first reviewer, assign level 1
+        # If there are existing reviewers, this reviewer gets the next level
+        level_to_assign = next_level if next_level > 0 else 1
+        create_assignment(db, project_id, user_id, "reviewer", review_level=level_to_assign)
+        next_level += 1  # Increment for next reviewer in batch
         added_count += 1
     
     return {

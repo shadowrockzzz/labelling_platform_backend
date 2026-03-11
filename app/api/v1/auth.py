@@ -19,7 +19,6 @@ def login_endpoint(
     Login endpoint.
     Returns access token, refresh token, and user information.
     """
-    print(login(db, login_data))
     return login(db, login_data)
 
 @router.post("/refresh", response_model=TokenResponse)

@@ -293,15 +293,22 @@ class AnnotationTaskCRUD:
     def claim_task_fallback(self, project_id: int, annotator_id: int,
                              resource_getter) -> AnnotationTaskClaimResponse:
         """
-        Fallback claim method for databases without SKIP LOCKED support.
+        Claim the next available task with proper locking and exclusion.
         
-        Uses application-level locking with unique constraint.
+        Uses PostgreSQL row-level locking with FOR UPDATE SKIP LOCKED to prevent
+        race conditions when multiple annotators claim tasks simultaneously.
+        
+        Key behaviors:
+        - Returns existing locked task if user already has one
+        - Excludes resources user has already submitted/approved
+        - Locks both task AND resource atomically
         """
-        # Check for existing locked task
+        # Step 1: Check if user already has an active locked task for this project
         existing_locked = self.db.query(AnnotationTask).filter(
             AnnotationTask.project_id == project_id,
             AnnotationTask.annotator_id == annotator_id,
-            AnnotationTask.status == 'locked'
+            AnnotationTask.status.in_(['locked', 'in_progress']),
+            AnnotationTask.resource_type == self.resource_type
         ).first()
         
         if existing_locked:
@@ -312,12 +319,32 @@ class AnnotationTaskCRUD:
                 message="Resumed your existing task"
             )
         
-        # Find first available task
-        task = self.db.query(AnnotationTask).filter(
+        # Step 2: Find resource IDs the user has already seen (submitted or approved)
+        # These should be excluded from the claim query
+        already_seen_resource_ids = self.db.query(AnnotationTask.resource_id).filter(
             AnnotationTask.project_id == project_id,
+            AnnotationTask.annotator_id == annotator_id,
             AnnotationTask.resource_type == self.resource_type,
-            AnnotationTask.status == 'available'
-        ).order_by(AnnotationTask.created_at.asc()).first()
+            AnnotationTask.status.in_(['submitted', 'approved'])
+        ).all()
+        already_seen_ids = [r[0] for r in already_seen_resource_ids]
+        
+        # Step 3: Find next available task with row-level locking
+        # FOR UPDATE SKIP LOCKED prevents race conditions
+        query = self.db.query(AnnotationTask).filter(
+            AnnotationTask.project_id == project_id,
+            AnnotationTask.status == 'available',
+            AnnotationTask.resource_type == self.resource_type,
+            AnnotationTask.annotator_id == None  # Unassigned
+        )
+        
+        # Exclude already seen resources
+        if already_seen_ids:
+            query = query.filter(~AnnotationTask.resource_id.in_(already_seen_ids))
+        
+        # Order by created_at to get oldest unprocessed item
+        # Use FOR UPDATE SKIP LOCKED for atomic claim
+        task = query.order_by(AnnotationTask.created_at.asc()).with_for_update(skip_locked=True).first()
         
         if not task:
             raise HTTPException(
@@ -325,10 +352,13 @@ class AnnotationTaskCRUD:
                 detail="No tasks available in this project"
             )
         
-        # Lock it
-        task.lock(annotator_id, self.LOCK_DURATION_HOURS)
+        # Step 4: Lock the task atomically
+        task.status = 'locked'
+        task.annotator_id = annotator_id
+        task.locked_at = datetime.utcnow()
+        task.lock_expires_at = datetime.utcnow() + timedelta(hours=self.LOCK_DURATION_HOURS)
         
-        # Update resource pool status
+        # Step 5: Lock the corresponding resource (in same transaction)
         self._update_resource_pool_status(task.resource_id, 'locked', annotator_id)
         
         self.db.commit()

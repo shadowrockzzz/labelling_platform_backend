@@ -23,7 +23,6 @@ from app.annotations.shared.task_schemas import (
 )
 from app.annotations.image.models import ImageResource
 from app.annotations.image.crud import get_image_resource
-from app.annotations.image.router import add_urls_to_resource
 
 router = APIRouter(prefix="/tasks", tags=["Image Annotation Tasks"])
 
@@ -36,7 +35,6 @@ def get_task_crud(db: Session = Depends(get_db)) -> AnnotationTaskCRUD:
 def resource_getter_factory(db: Session):
     """Factory for resource getter that returns ORM objects with URL generation."""
     def resource_getter(resource_id):
-        # Return the raw ORM object - task_crud will generate URLs
         return get_image_resource(db, resource_id)
     return resource_getter
 
@@ -108,23 +106,34 @@ def get_task(
     return task_crud.get_task_with_resource(task_id, resource_getter_factory(db))
 
 
-@router.post("/{task_id}/skip", response_model=AnnotationTaskSkipResponse)
+@router.post("/{task_id}/skip", response_model=AnnotationTaskClaimResponse)
 def skip_task(
     project_id: int,
     task_id: UUID,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
     task_crud: AnnotationTaskCRUD = Depends(get_task_crud),
 ):
     """
-    Skip a task, returning it to the pool.
+    Skip a task, returning it to the pool, and claim the next available task.
     
     Only the task owner can skip it.
+    Returns the next available task or 404 if no more tasks.
     """
+    # Skip the current task
     success, message = task_crud.skip_task(task_id, int(current_user.id))
-    return AnnotationTaskSkipResponse(
-        message=message,
-        task_id=task_id
-    )
+    
+    # Immediately claim the next task
+    try:
+        return task_crud.claim_task_fallback(project_id, int(current_user.id), resource_getter_factory(db))
+    except HTTPException as e:
+        if e.status_code == 404:
+            # No more tasks available after skipping
+            return AnnotationTaskClaimResponse(
+                task=None,
+                message="Task skipped. No more tasks available in this project."
+            )
+        raise
 
 
 @router.post("/{task_id}/submit", response_model=AnnotationTaskSubmitResponse)

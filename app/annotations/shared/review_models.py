@@ -2,7 +2,7 @@
 SQLAlchemy model for review tasks with UUID tracking.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Index
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -44,8 +44,8 @@ class ReviewTask(Base):
     # Link to previous review task (for audit chain)
     previous_review_task_id = Column(UUID(as_uuid=True), ForeignKey("review_tasks.id"), nullable=True)
     
-    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
-    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     project = relationship("Project", backref="review_tasks")
@@ -70,19 +70,19 @@ class ReviewTask(Base):
     @property
     def is_locked(self) -> bool:
         """Check if task is currently locked."""
-        return self.status == 'locked' and self.lock_expires_at and self.lock_expires_at > datetime.utcnow()
+        return self.status == 'locked' and self.lock_expires_at and self.lock_expires_at > datetime.now(timezone.utc)
     
     @property
     def is_expired(self) -> bool:
         """Check if lock has expired."""
         if self.lock_expires_at is None:
             return False
-        return self.status == 'locked' and self.lock_expires_at < datetime.utcnow()
+        return self.status == 'locked' and self.lock_expires_at < datetime.now(timezone.utc)
     
     def lock(self, reviewer_id: int, lock_duration_minutes: int = 30):
         """Lock the task to a reviewer."""
         from datetime import timedelta
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         self.reviewer_id = reviewer_id
         self.status = 'locked'
         self.locked_at = now
@@ -100,7 +100,7 @@ class ReviewTask(Base):
         self.status = 'approved'
         self.action = 'approved'
         self.action_comment = comment
-        self.action_at = datetime.utcnow()
+        self.action_at = datetime.now(timezone.utc)
         self.locked_at = None
         self.lock_expires_at = None
     
@@ -109,7 +109,7 @@ class ReviewTask(Base):
         self.status = 'rejected'
         self.action = 'rejected'
         self.action_comment = comment
-        self.action_at = datetime.utcnow()
+        self.action_at = datetime.now(timezone.utc)
         self.locked_at = None
         self.lock_expires_at = None
     
@@ -117,4 +117,4 @@ class ReviewTask(Base):
         """Mark that reviewer made edits."""
         self.action = 'edited'
         self.action_comment = comment
-        self.action_at = datetime.utcnow()
+        self.action_at = datetime.now(timezone.utc)

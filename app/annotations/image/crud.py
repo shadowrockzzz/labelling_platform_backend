@@ -421,13 +421,17 @@ def delete_image_annotation(db: Session, annotation_id: int) -> bool:
     return True
 
 
-def submit_annotation(db: Session, annotation_id: int) -> Optional[ImageAnnotation]:
-    """Submit annotation for review.
+def submit_annotation(db: Session, annotation_id: int, user_id: Optional[int] = None) -> Optional[ImageAnnotation]:
+    """Submit annotation for review with multi-level support.
     
     Allows submission from any non-submitted status.
     Approved/rejected annotations can be resubmitted after fixes.
     If already submitted or in_review, returns the annotation without error.
+    Creates ReviewTask for level 1 when reviewers are configured.
     """
+    from app.crud.assignment import get_reviewer_for_level, get_max_review_level
+    from app.annotations.shared.review_crud import get_or_create_review_task
+    
     annotation = get_image_annotation(db, annotation_id)
     if not annotation:
         return None
@@ -441,10 +445,44 @@ def submit_annotation(db: Session, annotation_id: int) -> Optional[ImageAnnotati
     annotation.reviewer_id = None
     annotation.reviewed_at = None
     
-    annotation.status = AnnotationStatusEnum.SUBMITTED.value
+    # Check if project has reviewers configured
+    max_level = get_max_review_level(db, annotation.project_id)
+    
+    if max_level == 0:
+        # No reviewers - auto-approve
+        annotation.status = AnnotationStatusEnum.APPROVED.value
+        annotation.submitted_at = datetime.utcnow()
+        db.commit()
+        db.refresh(annotation)
+        return annotation
+    
+    # Get level-1 reviewer
+    level_1_reviewer = get_reviewer_for_level(db, annotation.project_id, 1)
+    if not level_1_reviewer:
+        # No level-1 reviewer, auto-approve
+        annotation.status = AnnotationStatusEnum.APPROVED.value
+        annotation.submitted_at = datetime.utcnow()
+        db.commit()
+        db.refresh(annotation)
+        return annotation
+    
+    # Update annotation for multi-level review
+    annotation.status = AnnotationStatusEnum.IN_REVIEW.value
+    annotation.current_review_level = 1
+    annotation.reviewer_id = level_1_reviewer["user_id"]
     annotation.submitted_at = datetime.utcnow()
     db.commit()
     db.refresh(annotation)
+    
+    # Create ReviewTask for level 1 - THIS IS THE KEY FIX
+    review_task = get_or_create_review_task(
+        db=db,
+        project_id=annotation.project_id,
+        annotation_id=annotation.id,
+        annotation_type="image",
+        review_level=1
+    )
+    
     return annotation
 
 

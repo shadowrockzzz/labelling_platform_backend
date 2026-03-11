@@ -62,7 +62,7 @@ class AnnotationTaskStats(BaseModel):
 
 class AnnotationTaskClaimResponse(BaseModel):
     """Response for task claim operation."""
-    task: AnnotationTaskWithResource
+    task: Optional[AnnotationTaskWithResource] = None
     message: str = "Task claimed successfully"
 
 

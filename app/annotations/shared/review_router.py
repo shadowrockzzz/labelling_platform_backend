@@ -87,11 +87,20 @@ def create_review_router(
         If not, locks and returns the next available task.
         """
         # Check user is assigned as reviewer at this level
+        # Note: reviewers with NULL review_level are treated as level 1 for backward compatibility
+        from sqlalchemy import or_
+        
+        # Build review level conditions properly for SQLAlchemy
+        review_level_conditions = [ProjectAssignment.review_level == review_level]
+        if review_level == 1:
+            # Backward compatibility: NULL review_level treated as level 1
+            review_level_conditions.append(ProjectAssignment.review_level.is_(None))
+        
         assignment = db.query(ProjectAssignment).filter(
             ProjectAssignment.project_id == project_id,
             ProjectAssignment.user_id == current_user.id,
             ProjectAssignment.role == 'reviewer',
-            ProjectAssignment.review_level == review_level
+            or_(*review_level_conditions)
         ).first()
         
         if not assignment:
@@ -99,6 +108,11 @@ def create_review_router(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"You are not assigned as a level {review_level} reviewer for this project"
             )
+        
+        # If reviewer has NULL review_level, auto-fix it to level 1
+        if assignment.review_level is None and review_level == 1:
+            assignment.review_level = 1
+            db.commit()
         
         # Get next available review task
         review_task = get_next_review_task_for_reviewer(
